@@ -6,10 +6,12 @@ This program brings the real world into VRC and any other server-configurable cl
 <summary>Videos</Summary>
 
 Boston Clearance/Ground/Tower
-[![](https://img.youtube.com/vi/hU109JQMo9Y/0.jpg)](https://www.youtube.com/watch?v=hU109JQMo9Y)
+
+[![](https://img.youtube.com/vi/hU109JQMo9Y/0.jpg)](https://www.youtube.com/watch?v=hU109JQMo9Y)]
 
 Boston Center
-[![](https://img.youtube.com/vi/khF5jed41oI/0.jpg)](https://www.youtube.com/watch?v=khF5jed41oI)
+
+[![](https://img.youtube.com/vi/khF5jed41oI/0.jpg)](https://www.youtube.com/watch?v=khF5jed41oI)]
 
 </details>
 
