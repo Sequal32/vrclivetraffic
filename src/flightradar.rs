@@ -4,7 +4,7 @@ use reqwest::blocking;
 use serde_json::{self, Value};
 use serde::Deserialize;
 
-const ENDPOINT: &str = "https://data-live.flightradar24.com/zones/fcgi/feed.js?faa=1&mlat=1&flarm=1&adsb=1&gnd=1&air=1&vehicles=1&estimated=1&gliders=1&stats=1&maxage=14400";
+const ENDPOINT: &str = "https://data-live.flightradar24.com/zones/fcgi/feed.js?faa=1&mlat=1&flarm=1&adsb=1&gnd=1&air=1&vehicles=1&estimated=1&gliders=1&stats=0&maxage=14400";
 
 #[derive(Deserialize, Debug, Default, Clone)]
 pub struct AircraftData {

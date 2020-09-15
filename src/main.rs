@@ -107,7 +107,7 @@ fn main() {
                     Entry::Vacant(v) => v.insert(TrackedData::default())
                 };
                 // Update position either in place or interpolated
-                let should_interpolate = should_update_position && aircraft.at_last_position_update.unwrap().elapsed().as_secs() < 10;
+                let should_interpolate = should_update_position && aircraft.at_last_position_update.unwrap().elapsed().as_secs() < 20;
                 if let Err(_) = stream.write(build_aircraft_string(aircraft, should_interpolate).as_bytes()) {break 'main};
                 // Give the aircraft a flight plan 
                 if !tracked.did_set_fp && aircraft.fp.is_some() {
