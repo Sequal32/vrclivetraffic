@@ -61,6 +61,7 @@ struct ConfigData {
 const CONFIG_FILENAME: &str = "config.json";
 
 fn main() {
+    println!("Starting TCP Server");
     let listener = TcpListener::bind("127.0.0.1:6809").unwrap();
 
     let config: ConfigData;
@@ -71,9 +72,15 @@ fn main() {
         file.read_to_end(&mut data).expect("Could not read config.json!");
         config = serde_json::from_str(String::from_utf8(data).expect("Error decoding file!").as_str()).expect("Config.json is invalid.");
     }
+    println!("Read config.json");
 
     loop {
-        let (mut stream, _) = listener.accept().unwrap();
+        println!("Waiting for connection...");
+        
+        let (mut stream, addr) = listener.accept().unwrap();
+
+        println!("Connection established! {}", addr.to_string());
+
         stream.write("$DISERVER:CLIENT:LIVE ATC:\r\n".as_bytes()).ok();
         stream.write(format!("$CRSERVER:{0:}:ATC:Y:{0:}\r\n", config.callsign).as_bytes()).ok();
 
@@ -84,12 +91,16 @@ fn main() {
         let mut injected_tracker: HashMap<String, TrackedData> = HashMap::new();
         let mut timer = Instant::now();
         
+        println!("Displaying aircraft...");
+
         'main: loop {
             tracker.step();
 
             let should_update_position = timer.elapsed().as_secs_f32() >= 3.0;
 
-            for aircraft in tracker.get_aircraft_data() {
+            let ac_data = tracker.get_aircraft_data();
+            let aircraft_count = ac_data.len();
+            for aircraft in ac_data {
                 // Insert aircraft as "injected" if not already in
                 let tracked: &mut TrackedData = match injected_tracker.entry(aircraft.id.clone()) {
                     Entry::Occupied(o) => o.into_mut(),
@@ -107,6 +118,7 @@ fn main() {
 
             if should_update_position {
                 timer = Instant::now();
+                println!("Updating aircraft: {} shown.", aircraft_count);
             }
 
             // Remove untracked
