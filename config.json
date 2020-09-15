@@ -1,0 +1,10 @@
+{
+    "upper_lat": 42.48,
+    "upper_lon": -71.28,
+    "bottom_lat": 42.26,
+    "bottom_lon": -70.74,
+
+    "floor": 0,
+    "ceiling": 99999,
+    "callsign": "BOS_GND"
+}
