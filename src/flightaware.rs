@@ -38,8 +38,8 @@ fn get_flightplan_from_json(data: &Value) -> Option<FlightPlan> {
     let flight_data = first_flight.as_object()?;
     let flight_plan = flight_data.get("flightPlan")?.as_object()?;
 
-    let origin = get_destination(flight_data).unwrap_or_default();
-    let destination = get_origin(flight_data).unwrap_or_default();
+    let origin = get_origin(flight_data).unwrap_or_default();
+    let destination = get_destination(flight_data).unwrap_or_default();
     let equipment = get_equipment(flight_data).unwrap_or_default();
 
     
