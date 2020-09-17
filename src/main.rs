@@ -87,6 +87,8 @@ fn main() {
         let mut tracker = Tracker::new(Bounds {
             lat1: config.upper_lat, lat2: config.bottom_lat, lon1: config.upper_lon, lon2: config.bottom_lon
         }, config.floor, config.ceiling);
+        // Start loops to listen for data
+        tracker.run();
 
         let mut injected_tracker: HashMap<String, TrackedData> = HashMap::new();
         let mut timer = Instant::now();
@@ -107,18 +109,20 @@ fn main() {
                     Entry::Vacant(v) => v.insert(TrackedData::default())
                 };
                 // Update position either in place or interpolated
-                let should_interpolate = should_update_position && aircraft.at_last_position_update.unwrap().elapsed().as_secs() < 20;
+                let should_interpolate = !aircraft.data.is_on_ground() && should_update_position && aircraft.at_last_position_update.unwrap().elapsed().as_secs() < 20;
                 if let Err(_) = stream.write(build_aircraft_string(aircraft, should_interpolate).as_bytes()) {break 'main};
                 // Give the aircraft a flight plan 
                 if !tracked.did_set_fp && aircraft.fp.is_some() {
                     stream.write(build_flightplan_string(&aircraft.data.callsign, aircraft.fp.as_ref().unwrap()).as_bytes()).ok();
                     tracked.did_set_fp = true;
                 }
+
+                std::thread::sleep(std::time::Duration::from_millis(1));
             }
 
             if should_update_position {
                 timer = Instant::now();
-                println!("Updating aircraft: {} shown.", aircraft_count);
+                println!("Updating aircraft: {} shown.\r", aircraft_count);
             }
 
             // Remove untracked
@@ -128,7 +132,7 @@ fn main() {
             }
 
 
-            std::thread::sleep(std::time::Duration::from_millis(50));
+            std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }
 }

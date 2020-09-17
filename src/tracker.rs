@@ -29,6 +29,10 @@ impl Tracker {
         }
     }
 
+    pub fn run(&self) {
+        self.faware.run();
+    }
+
     fn try_update_flightplan(&mut self, id: &String) {
         let data = self.tracking.get_mut(id);
         if data.is_none() {return}

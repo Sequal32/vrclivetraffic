@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-const INTERPOLATE_OFFSET: f32 = 1.0;
+const INTERPOLATE_OFFSET: f32 = 0.5;
 
 fn convert_miles_to_lat(miles: f32) -> f32{
     return miles / 69.0

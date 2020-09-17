@@ -22,11 +22,17 @@ pub struct AircraftData {
     pub origin: String,
     pub destination: String,
     pub flight: String,
-    pub is_on_ground: u8,
+    is_on_ground: u8,
     pub rate_of_climb: i32,
     pub callsign: String,
-    pub is_glider: u8,
+    is_glider: u8,
     pub airline: String
+}
+
+impl AircraftData {
+    pub fn is_on_ground(&self) -> bool {
+        return self.is_on_ground == 1
+    }
 }
 
 pub struct FlightRadar {

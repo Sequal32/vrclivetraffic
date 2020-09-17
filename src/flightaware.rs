@@ -59,6 +59,11 @@ fn get_flightplan_from_json(data: &Value) -> Option<FlightPlan> {
     });
 }
 
+struct FlightPlanRequest {
+    id: String,
+    callsign: String
+}
+
 pub struct FlightPlanResult {
     pub id: String,
     pub callsign: String,
@@ -67,7 +72,7 @@ pub struct FlightPlanResult {
 
 pub struct FlightAware {
     client: Arc<Mutex<Client>>,
-    flightplan_request: Request<Result<FlightPlanResult, FlightAwareError>>
+    flightplans: Request<Result<FlightPlanResult, FlightAwareError>, FlightPlanRequest>
 }
 
 #[derive(Debug)]
@@ -80,52 +85,51 @@ impl FlightAware {
     pub fn new() -> Self {
         Self {
             client: Arc::new(Mutex::new(Client::new())),
-            flightplan_request: Request::new()
+            flightplans: Request::new()
         }
     }
 
-    pub fn request_flightplan(&self, id: &str, callsign: &str) {
-        let exp = regex::Regex::new(r"var trackpollBootstrap = (\{.+\});").unwrap();
-        
-        let tx = self.flightplan_request.get_handle();
-        let callsign = callsign.to_string();
-        let id = id.to_string();
+    pub fn run(&self) {
         let client = self.client.clone();
-        std::thread::spawn(move || {
-            let response = client.lock().unwrap().get(format!("{}{}", ENDPOINT, callsign).as_str()).send();
+        let exp = regex::Regex::new(r"var trackpollBootstrap = (\{.+\});").unwrap();
+
+        self.flightplans.run(move |job| {
+            // Get data from flightaware
+            let response = client.lock().unwrap().get(format!("{}{}", ENDPOINT, job.callsign).as_str()).send();
             if !response.is_ok() {
-                tx.send(Err(FlightAwareError::RequestFailed(callsign))).ok();
-                return
+                return Err(FlightAwareError::RequestFailed(job.callsign));
             }
-    
+            
             if let Ok(text) = response.unwrap().text() {
                 let mut data: &str = "";
-    
+                // Parse json from html
                 for cap in exp.captures(text.as_str()) {
                     data = cap.get(1).unwrap().as_str();
                     break;
                 }
-                //
+                
                 if let Ok(data) = serde_json::from_str(data) {
-                    let data: Value = data;
                     match get_flightplan_from_json(&data) {
                         Some(data) => {
-                            tx.send(Ok(FlightPlanResult {callsign, id: id, fp: data})).ok();
-                            return
+                            return Ok(FlightPlanResult {callsign: job.callsign, id: job.id, fp: data});
                         },
-                        None => {
-                            tx.send(Err(FlightAwareError::ParseError(callsign))).ok();
-                            return
-                        }
+                        None => ()
                     }
                 }
             }
     
-            tx.send(Err(FlightAwareError::ParseError(callsign))).ok();
+            return Err(FlightAwareError::ParseError(job.callsign));
+        });
+    }
+
+    pub fn request_flightplan(&self, id: &str, callsign: &str) {
+        self.flightplans.give_job(FlightPlanRequest {
+            id: id.to_string(), 
+            callsign: callsign.to_string()
         });
     }
 
     pub fn get_next_flightplan(&self) -> Option<Result<FlightPlanResult, FlightAwareError>> {
-        return self.flightplan_request.get_next();
+        return self.flightplans.get_next();
     }
 }
