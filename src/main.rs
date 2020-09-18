@@ -48,6 +48,10 @@ fn build_metar_string(callsign: &str, metar: &String) -> String {
     format!("$ARSERVER:{}:METAR:{}\r\n", callsign, metar)
 }
 
+fn build_validate_atc_string(callsign: &str) -> String {
+    format!("$CRSERVER:{0:}:ATC:Y:{0:}\r\n", callsign)
+}
+
 #[derive(Default)]
 struct TrackedData {
     did_set_fp: bool
@@ -61,7 +65,6 @@ struct ConfigData {
     bottom_lon: f32,
     floor: i32,
     ceiling: i32,
-    callsign: String
 }
 
 const CONFIG_FILENAME: &str = "config.json";
@@ -93,8 +96,6 @@ fn main() {
 
         // Confirms connection with connect
         stream.write("$DISERVER:CLIENT:LIVE ATC:\r\n".as_bytes()).ok();
-        // Recognize callsign as a valid controller
-        stream.write(format!("$CRSERVER:{0:}:ATC:Y:{0:}\r\n", config.callsign).as_bytes()).ok();
 
         stream.set_nonblocking(true).ok();
 
@@ -108,6 +109,7 @@ fn main() {
         // Map to keep track of data already injected
         let mut injected_tracker: HashMap<String, TrackedData> = HashMap::new();
         let mut timer = Instant::now();
+        let mut current_callsign = String::new();
         
         println!("Displaying aircraft...");
 
@@ -158,6 +160,14 @@ fn main() {
                             weather.request_weather(&metar.payload)
                         }
                     },
+                    PacketTypes::ATCPosition(position) => {
+                        // Update callsign
+                        if current_callsign != position.callsign {
+                            // Recognize callsign as a valid controller
+                            current_callsign = position.callsign.to_string();
+                            stream.write(build_validate_atc_string(&current_callsign).as_bytes()).ok();
+                        }
+                    }
                     _ => ()
                 },
                 None => ()
@@ -165,7 +175,7 @@ fn main() {
 
             // Step stuff
             if let Some(Ok(metar)) = weather.get_next_weather() {
-                stream.write(build_metar_string(&config.callsign, &metar).as_bytes()).ok();
+                stream.write(build_metar_string(&current_callsign, &metar).as_bytes()).ok();
             }
 
             std::thread::sleep(std::time::Duration::from_millis(10));
