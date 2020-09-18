@@ -95,30 +95,33 @@ impl FlightAware {
 
         self.flightplans.run(move |job| {
             // Get data from flightaware
-            let response = client.lock().unwrap().get(format!("{}{}", ENDPOINT, job.callsign).as_str()).send();
-            if !response.is_ok() {
-                return Err(FlightAwareError::RequestFailed(job.callsign));
-            }
+            let response = match client.lock().unwrap().get(format!("{}{}", ENDPOINT, job.callsign).as_str()).send() {
+                Ok(r) => r,
+                Err(_) => return Err(FlightAwareError::RequestFailed(job.callsign))
+            };
+
+            let text = match response.text() {
+                Ok(t) => t,
+                Err(_) => return Err(FlightAwareError::ParseError(job.callsign))
+            };
             
-            if let Ok(text) = response.unwrap().text() {
-                let mut data: &str = "";
-                // Parse json from html
-                for cap in exp.captures(text.as_str()) {
-                    data = cap.get(1).unwrap().as_str();
-                    break;
-                }
-                
-                if let Ok(data) = serde_json::from_str(data) {
-                    match get_flightplan_from_json(&data) {
-                        Some(data) => {
-                            return Ok(FlightPlanResult {callsign: job.callsign, id: job.id, fp: data});
-                        },
-                        None => ()
-                    }
-                }
+            let mut data: &str = "";
+            // Parse json from html
+            for cap in exp.captures(text.as_str()) {
+                data = cap.get(1).unwrap().as_str();
+                break;
             }
-    
-            return Err(FlightAwareError::ParseError(job.callsign));
+
+            // Deserialize into Value
+            let data: Value = match serde_json::from_str(data) {
+                Ok(d) => d,
+                Err(_) => return Err(FlightAwareError::ParseError(job.callsign))
+            };
+
+            return match get_flightplan_from_json(&data) {
+                Some(fp) => Ok(FlightPlanResult {callsign: job.callsign, id: job.id, fp: fp}),
+                None => Err(FlightAwareError::ParseError(job.callsign))
+            };
         });
     }
 

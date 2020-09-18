@@ -1,11 +1,13 @@
 mod interpolate;
 mod flightradar;
 mod flightaware;
+mod noaa;
 mod request;
 mod tracker;
 
 use std::{net::TcpListener, io::Write, time::Instant, collections::{HashMap, hash_map::Entry}, fs::File, io::Read};
 use serde::Deserialize;
+use fsdparser::{Parser, PacketTypes};
 
 use flightaware::FlightPlan;
 use flightradar::{Bounds};
@@ -42,6 +44,10 @@ fn build_flightplan_string(callsign: &str, fp: &FlightPlan) -> String {
     )
 }
 
+fn build_metar_string(callsign: &str, metar: &String) -> String {
+    format!("$ARSERVER:{}:METAR:{}\r\n", callsign, metar)
+}
+
 #[derive(Default)]
 struct TrackedData {
     did_set_fp: bool
@@ -74,6 +80,10 @@ fn main() {
     }
     println!("Read config.json");
 
+    // Weather
+    let weather = noaa::NoaaWeather::new();
+    weather.run();
+
     loop {
         println!("Waiting for connection...");
         
@@ -81,15 +91,21 @@ fn main() {
 
         println!("Connection established! {}", addr.to_string());
 
+        // Confirms connection with connect
         stream.write("$DISERVER:CLIENT:LIVE ATC:\r\n".as_bytes()).ok();
+        // Recognize callsign as a valid controller
         stream.write(format!("$CRSERVER:{0:}:ATC:Y:{0:}\r\n", config.callsign).as_bytes()).ok();
 
+        stream.set_nonblocking(true).ok();
+
+        // Instantiate main tracker
         let mut tracker = Tracker::new(Bounds {
             lat1: config.upper_lat, lat2: config.bottom_lat, lon1: config.upper_lon, lon2: config.bottom_lon
         }, config.floor, config.ceiling);
         // Start loops to listen for data
         tracker.run();
 
+        // Map to keep track of data already injected
         let mut injected_tracker: HashMap<String, TrackedData> = HashMap::new();
         let mut timer = Instant::now();
         
@@ -120,6 +136,7 @@ fn main() {
                 std::thread::sleep(std::time::Duration::from_millis(1));
             }
 
+            // Reset timer
             if should_update_position {
                 timer = Instant::now();
                 println!("Updating aircraft: {} shown.\r", aircraft_count);
@@ -131,6 +148,25 @@ fn main() {
                 injected_tracker.remove(&id);
             }
 
+            // Accept/Parse data from client
+            let mut client_request = String::new();
+            stream.read_to_string(&mut client_request).ok();
+            match Parser::parse(&client_request) {
+                Some(packet) => match packet {
+                    PacketTypes::Metar(metar) => {
+                        if !metar.is_response {
+                            weather.request_weather(&metar.payload)
+                        }
+                    },
+                    _ => ()
+                },
+                None => ()
+            }
+
+            // Step stuff
+            if let Some(Ok(metar)) = weather.get_next_weather() {
+                stream.write(build_metar_string(&config.callsign, &metar).as_bytes()).ok();
+            }
 
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
