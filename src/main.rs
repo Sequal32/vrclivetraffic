@@ -1,16 +1,17 @@
+mod airports;
 mod interpolate;
 mod flightradar;
 mod flightaware;
 mod noaa;
 mod request;
 mod tracker;
+mod util;
 
-use std::{net::TcpListener, io::Write, time::Instant, collections::{HashMap, hash_map::Entry}, fs::File, io::Read};
-use serde::Deserialize;
-use fsdparser::{Parser, PacketTypes};
-
+use airports::Airports;
 use flightaware::FlightPlan;
-use flightradar::{Bounds};
+use fsdparser::{Parser, PacketTypes};
+use serde::Deserialize;
+use std::{net::TcpListener, io::Write, time::Instant, collections::{HashMap, hash_map::Entry}, fs::File, io::Read};
 use tracker::{TrackData, Tracker};
 
 fn build_aircraft_string(data: &mut TrackData, should_interpolate: bool) -> String {
@@ -59,29 +60,29 @@ struct TrackedData {
 
 #[derive(Deserialize)]
 struct ConfigData {
-    upper_lat: f32,
-    upper_lon: f32,
-    bottom_lat: f32,
-    bottom_lon: f32,
+    airport: String,
+    range: u32,
     floor: i32,
     ceiling: i32,
 }
 
 const CONFIG_FILENAME: &str = "config.json";
+const AIRPORT_DATA_FILENAME: &str = "airports.dat";
 
 fn main() {
-    println!("Starting TCP Server");
     let listener = TcpListener::bind("127.0.0.1:6809").unwrap();
 
-    let config: ConfigData;
-    {
-        // Read from config
-        let mut file = File::open(CONFIG_FILENAME).expect("Could not find config.json!");
+    // Read from config
+    let config: ConfigData = {
+        let mut file = File::open(CONFIG_FILENAME).expect("Could not read config.json!");
         let mut data = Vec::new();
         file.read_to_end(&mut data).expect("Could not read config.json!");
-        config = serde_json::from_str(String::from_utf8(data).expect("Error decoding file!").as_str()).expect("Config.json is invalid.");
-    }
-    println!("Read config.json");
+        serde_json::from_str(String::from_utf8(data).expect("Error decoding file!").as_str()).expect("Config.json is invalid.")
+    };
+
+    // Load airports
+    let airports = Airports::new(AIRPORT_DATA_FILENAME).expect("Could not read airports.dat!");
+    let bounds = airports.get_bounds_from_radius(&config.airport, config.range as f32).expect("Airport does not exist!");
 
     // Weather
     let weather = noaa::NoaaWeather::new();
@@ -100,9 +101,7 @@ fn main() {
         stream.set_nonblocking(true).ok();
 
         // Instantiate main tracker
-        let mut tracker = Tracker::new(Bounds {
-            lat1: config.upper_lat, lat2: config.bottom_lat, lon1: config.upper_lon, lon2: config.bottom_lon
-        }, config.floor, config.ceiling);
+        let mut tracker = Tracker::new(&bounds, config.floor, config.ceiling);
         // Start loops to listen for data
         tracker.run();
 

@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-
+use crate::util::Bounds;
 use reqwest::blocking;
 use serde_json::{self, Value};
 use serde::Deserialize;
+use std::collections::HashMap;
 
 const ENDPOINT: &str = "https://data-live.flightradar24.com/zones/fcgi/feed.js?faa=1&mlat=1&flarm=1&adsb=1&gnd=1&air=1&vehicles=1&estimated=1&gliders=1&stats=0&maxage=14400";
 
@@ -41,10 +41,10 @@ pub struct FlightRadar {
 }
 
 impl FlightRadar {
-    pub fn new(radar_loc: Bounds) -> Self {
+    pub fn new(radar_loc: &Bounds) -> Self {
         Self {
             client: blocking::Client::new(),
-            radar_loc
+            radar_loc: radar_loc.clone()
         }
     }
 
@@ -78,11 +78,4 @@ impl FlightRadar {
 
         return Err(())
     }
-}
-
-pub struct Bounds {
-    pub lat1: f32,
-    pub lon1: f32,
-    pub lat2: f32,
-    pub lon2: f32,
 }

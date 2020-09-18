@@ -1,5 +1,5 @@
 [package]
-name = "liveatc"
+name = "livetraffic"
 version = "0.1.0"
 authors = ["Sequal32 <connor0530@gmail.com>"]
 edition = "2018"

@@ -1,4 +1,4 @@
-use std::{sync::{Mutex, Arc}, io::BufRead, io::BufReader};
+use std::{sync::{Mutex, Arc}};
 
 use blocking::Client;
 use reqwest::blocking;

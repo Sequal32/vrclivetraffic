@@ -1,38 +1,7 @@
 use std::time::Instant;
+use crate::util::{LatLon, Vector2D, convert_miles_to_lat, convert_miles_to_lon};
 
 const INTERPOLATE_OFFSET: f32 = 0.5;
-
-fn convert_miles_to_lat(miles: f32) -> f32{
-    return miles / 69.0
-}
-
-fn convert_miles_to_lon(miles: f32) -> f32{
-    return miles / 54.6
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct LatLon {
-    pub lat: f32,
-    pub lon: f32
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct Vector2D {
-    pub x: f32,
-    pub y: f32
-}
-
-impl Vector2D {
-    pub fn from_heading_and_speed(heading: f32, speed: f32) -> Self {
-        // Split speed into componenets
-        // let angle = heading + 180 % 360;
-
-        Self {
-            x: heading.to_radians().cos() * speed,
-            y: heading.to_radians().sin() * speed
-        }
-    }
-}
 
 pub struct InterpolatePosition {
     pos: LatLon,

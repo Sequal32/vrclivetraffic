@@ -1,6 +1,7 @@
 use std::{collections::HashMap, time::Instant, collections::HashSet, collections::hash_map::Keys};
 
-use crate::{flightradar::{AircraftData, FlightRadar, Bounds}, interpolate::InterpolatePosition};
+use crate::util::Bounds;
+use crate::{flightradar::{AircraftData, FlightRadar}, interpolate::InterpolatePosition};
 use crate::flightaware::{FlightPlan, FlightAware};
 
 pub struct Tracker {
@@ -16,7 +17,7 @@ pub struct Tracker {
 }
 
 impl Tracker {
-    pub fn new(radar_loc: Bounds, floor: i32, ceiling: i32) -> Self {
+    pub fn new(radar_loc: &Bounds, floor: i32, ceiling: i32) -> Self {
         Self {
             radar: FlightRadar::new(radar_loc),
             faware: FlightAware::new(),
