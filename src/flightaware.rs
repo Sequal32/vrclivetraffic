@@ -36,18 +36,23 @@ fn get_flightplan_from_json(data: &Value) -> Option<FlightPlan> {
     let (_, first_flight) = flights.iter().next()?;
     
     let flight_data = first_flight.as_object()?;
-    let flight_plan = flight_data.get("flightPlan")?.as_object()?;
 
     let origin = get_origin(flight_data).unwrap_or_default();
     let destination = get_destination(flight_data).unwrap_or_default();
     let equipment = get_equipment(flight_data).unwrap_or_default();
 
-    
-    let speed = flight_plan.get("speed")?.as_u64().unwrap_or(0);
-    let mut altitude = flight_plan.get("altitude")?.as_u64().unwrap_or(0);
-    let route = flight_plan.get("route")?.as_str().unwrap_or("").to_string();
+    let mut speed = 0;
+    let mut altitude = 0;
+    let mut route = String::new();
 
-    if altitude < 1000 {altitude = altitude * 100}
+    if let Some(flight_plan) = flight_data.get("flightPlan") {
+        let flight_plan = flight_plan.as_object()?;
+
+        speed = flight_plan.get("speed")?.as_u64().unwrap_or(0);
+        altitude = flight_plan.get("altitude")?.as_u64().unwrap_or(0);
+        route = flight_plan.get("route")?.as_str().unwrap_or("").to_string();
+        if altitude < 1000 {altitude = altitude * 100}
+    };
 
     return Some(FlightPlan {
         origin,
