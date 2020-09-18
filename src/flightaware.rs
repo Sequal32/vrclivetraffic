@@ -59,11 +59,13 @@ fn get_flightplan_from_json(data: &Value) -> Option<FlightPlan> {
     });
 }
 
+#[derive(Debug)]
 struct FlightPlanRequest {
     id: String,
     callsign: String
 }
 
+#[derive(Debug)]
 pub struct FlightPlanResult {
     pub id: String,
     pub callsign: String,
@@ -85,7 +87,7 @@ impl FlightAware {
     pub fn new() -> Self {
         Self {
             client: Arc::new(Mutex::new(Client::new())),
-            flightplans: Request::new()
+            flightplans: Request::new(5)
         }
     }
 

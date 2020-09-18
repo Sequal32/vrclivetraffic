@@ -22,7 +22,7 @@ pub struct NoaaWeather {
 impl NoaaWeather {
     pub fn new() -> Self {
         Self {
-            weather_request: Request::new(),
+            weather_request: Request::new(1),
             client: Arc::new(Mutex::new(Client::new()))
         }
     }
