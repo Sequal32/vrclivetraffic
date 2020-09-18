@@ -62,6 +62,7 @@ struct TrackedData {
 struct ConfigData {
     airport: String,
     range: u32,
+    delay: u64,
     floor: i32,
     ceiling: i32,
 }
@@ -107,10 +108,13 @@ fn main() {
 
         // Map to keep track of data already injected
         let mut injected_tracker: HashMap<String, TrackedData> = HashMap::new();
-        let mut timer = Instant::now();
         let mut current_callsign = String::new();
+        let mut timer = Instant::now();
+        let buffer_timer = Instant::now();
         
         println!("Displaying aircraft...");
+        
+        tracker.start_buffering();
 
         'main: loop {
             tracker.step();
@@ -137,13 +141,26 @@ fn main() {
                 std::thread::sleep(std::time::Duration::from_millis(1));
             }
 
-            // Reset timer
-            if should_update_position {
+            if should_update_position { // AKA 3 second intervals
+                // Reset position update timer
                 timer = Instant::now();
-                println!("Updating aircraft: {} shown.\r", aircraft_count);
+
+                 // Manage buffering
+                if tracker.is_buffering() {
+                    let elaspsed = buffer_timer.elapsed().as_secs();
+                    if elaspsed >= config.delay {
+                        tracker.stop_buffering();
+                    }
+                    else {
+                        println!("Buffering... {} seconds left to buffer.", (config.delay-elaspsed).max(0));
+                    }
+                }
+                else {
+                    println!("Updating aircraft: {} shown.", aircraft_count);
+                }
             }
 
-            // Remove untracked
+            // Remove dropped off radar aircraft
             for id in injected_tracker.keys().map(|x| x.clone()).collect::<Vec<String>>() {
                 if tracker.aircraft_exists(&id) {continue}
                 injected_tracker.remove(&id);

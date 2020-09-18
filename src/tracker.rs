@@ -1,13 +1,17 @@
-use std::{collections::HashMap, time::Instant, collections::HashSet, collections::hash_map::Keys};
+use std::{collections::HashMap, time::Instant, collections::{HashSet, VecDeque}, collections::hash_map::Keys};
 
 use crate::util::Bounds;
 use crate::{flightradar::{AircraftData, FlightRadar}, interpolate::InterpolatePosition};
 use crate::flightaware::{FlightPlan, FlightAware};
 
+const POLL_RATE: u64 = 3;
+
 pub struct Tracker {
     radar: FlightRadar,
     faware: FlightAware,
 
+    buffer: VecDeque<HashMap<String, AircraftData>>,
+    is_buffering: bool,
     tracking: HashMap<String, TrackData>,
     callsign_set: HashSet<String>,
     time: Instant,
@@ -21,6 +25,9 @@ impl Tracker {
         Self {
             radar: FlightRadar::new(radar_loc),
             faware: FlightAware::new(),
+
+            buffer: VecDeque::new(),
+            is_buffering: false,
             tracking: HashMap::new(),
             callsign_set: HashSet::new(),
             time: Instant::now(),
@@ -87,12 +94,25 @@ impl Tracker {
         }
     }
 
-    fn update_aircraft(&mut self) {
-        let aircraft = self.radar.get_aircraft();
-        if aircraft.is_err() {return;}
-        let aircraft = aircraft.as_ref().unwrap();
+    fn get_next_aircraft_update(&mut self) -> Option<HashMap<String, AircraftData>> {
+        if let Ok(aircraft) = self.radar.get_aircraft() {
+            self.buffer.push_back(aircraft);
+        }
 
-        for (id, aircraft) in aircraft {
+        if !self.is_buffering {
+            return self.buffer.pop_front();
+        } else {
+            return None;
+        }
+    }
+
+    fn update_aircraft(&mut self) {
+        let aircraft = match self.get_next_aircraft_update() {
+            Some(a) => a,
+            None => return
+        };
+
+        for (id, aircraft) in aircraft.iter() {
             // Invalid callsigns/callsign not received
             if aircraft.callsign.trim() == "" {continue}
             if aircraft.altitude < self.floor || aircraft.altitude > self.ceiling {continue}
@@ -126,12 +146,24 @@ impl Tracker {
 
     pub fn step(&mut self) {
         let elasped = self.time.elapsed().as_secs();
-        if elasped > 3 {
+        if elasped > POLL_RATE {
             self.update_aircraft();
             self.time = Instant::now();
         }
 
         self.step_flightplan();
+    }
+
+    pub fn start_buffering(&mut self) {
+        self.is_buffering = true;
+    }
+
+    pub fn stop_buffering(&mut self) {
+        self.is_buffering = false;
+    }
+
+    pub fn is_buffering(&self) -> bool {
+        self.is_buffering
     }
 }
 

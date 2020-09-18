@@ -1,6 +1,7 @@
 {
     "airport": "KBOS",
     "range": 30,
+    "delay": 15,
     "floor": 0,
     "ceiling": 99999
 }
