@@ -46,15 +46,19 @@ fn build_flightplan_string(callsign: &str, fp: &FlightPlan) -> String {
 }
 
 fn build_beacon_code_string(my_callsign: &str, callsign: &str, beacon_code: &str) -> String {
-    format!("#PCSERVER:{}:CCP:BC:{}:{}", my_callsign, callsign, beacon_code)
+    format!("#PCSERVER:{}:CCP:BC:{}:{}\r\n", my_callsign, callsign, beacon_code)
 }
 
 fn build_metar_string(callsign: &str, metar: &String) -> String {
     format!("$ARSERVER:{}:METAR:{}\r\n", callsign, metar)
 }
 
-fn build_validate_atc_string(callsign: &str) -> String {
+fn build_validate_atc_string_with_callsign(callsign: &str) -> String {
     format!("$CRSERVER:{0:}:ATC:Y:{0:}\r\n", callsign)
+}
+
+fn build_validate_atc_string_without_callsign(callsign: &str) -> String {
+    format!("$CRSERVER:{0:}:ATC:Y\r\n", callsign)
 }
 
 #[derive(Default)]
@@ -183,20 +187,22 @@ fn main() {
                                     weather.request_weather(&metar.payload)
                                 }
                             },
-                            PacketTypes::ATCPosition(position) => {
-                                // Update callsign
-                                if current_callsign != position.callsign {
-                                    // Recognize callsign as a valid controller
-                                    current_callsign = position.callsign.to_string();
-                                    stream.write(build_validate_atc_string(&current_callsign).as_bytes()).ok();
-                                }
-                            },
                             PacketTypes::ClientQuery(cq) => match cq.payload {
                                 ClientQueryPayload::FlightPlan(callsign) => {
                                     if let Some(data) = tracker.get_data_for_callsign(&callsign) {
                                         if let Some(fp) = &data.fp {
                                             stream.write(build_flightplan_string(&callsign, fp).as_bytes()).ok();
                                         }
+                                    }
+                                }
+                                ClientQueryPayload::IsValidATCQuery(callsign) => {
+                                    // Recognize callsign as a valid controller
+                                    current_callsign = cq.from.to_string();
+
+                                    if callsign.is_some() {
+                                        stream.write(build_validate_atc_string_with_callsign(&current_callsign).as_bytes()).ok();
+                                    } else {
+                                        stream.write(build_validate_atc_string_without_callsign(&current_callsign).as_bytes()).ok();
                                     }
                                 }
                                 _ => ()
