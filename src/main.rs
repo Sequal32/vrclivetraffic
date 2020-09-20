@@ -9,7 +9,7 @@ mod util;
 
 use airports::Airports;
 use flightaware::FlightPlan;
-use fsdparser::{Parser, PacketTypes};
+use fsdparser::{Parser, PacketTypes, ClientQueryPayload};
 use serde::Deserialize;
 use std::{net::TcpListener, io::Write, time::Instant, collections::{HashMap, hash_map::Entry}, fs::File, io::Read};
 use tracker::{TrackData, Tracker};
@@ -43,6 +43,10 @@ fn build_flightplan_string(callsign: &str, fp: &FlightPlan) -> String {
         destination = fp.destination,
         route = fp.route
     )
+}
+
+fn build_beacon_code_string(my_callsign: &str, callsign: &str, beacon_code: &str) -> String {
+    format!("#PCSERVER:{}:CCP:BC:{}:{}", my_callsign, callsign, beacon_code)
 }
 
 fn build_metar_string(callsign: &str, metar: &String) -> String {
@@ -130,15 +134,16 @@ fn main() {
                     Entry::Vacant(v) => v.insert(TrackedData::default())
                 };
                 // Update position either in place or interpolated
-                let should_interpolate = !aircraft.data.is_on_ground() && should_update_position && aircraft.at_last_position_update.unwrap().elapsed().as_secs() < 20;
-                if let Err(_) = stream.write(build_aircraft_string(aircraft, should_interpolate).as_bytes()) {break 'main};
+                if should_update_position {
+                    let should_interpolate = !aircraft.data.is_on_ground() && aircraft.at_last_position_update.unwrap().elapsed().as_secs() < 20;
+                    if let Err(_) = stream.write(build_aircraft_string(aircraft, should_interpolate).as_bytes()) {break 'main};
+                }
                 // Give the aircraft a flight plan 
                 if !tracked.did_set_fp && aircraft.fp.is_some() {
                     stream.write(build_flightplan_string(&aircraft.data.callsign, aircraft.fp.as_ref().unwrap()).as_bytes()).ok();
+                    stream.write(build_beacon_code_string(&current_callsign, &aircraft.data.callsign, &aircraft.data.squawk_code).as_bytes()).ok();
                     tracked.did_set_fp = true;
                 }
-
-                std::thread::sleep(std::time::Duration::from_millis(1));
             }
 
             if should_update_position { // AKA 3 second intervals
@@ -169,24 +174,38 @@ fn main() {
             // Accept/Parse data from client
             let mut client_request = String::new();
             stream.read_to_string(&mut client_request).ok();
-            match Parser::parse(&client_request) {
-                Some(packet) => match packet {
-                    PacketTypes::Metar(metar) => {
-                        if !metar.is_response {
-                            weather.request_weather(&metar.payload)
-                        }
-                    },
-                    PacketTypes::ATCPosition(position) => {
-                        // Update callsign
-                        if current_callsign != position.callsign {
-                            // Recognize callsign as a valid controller
-                            current_callsign = position.callsign.to_string();
-                            stream.write(build_validate_atc_string(&current_callsign).as_bytes()).ok();
-                        }
+            if client_request.trim() != "" {
+                for request in client_request.split("\n") {
+                    match Parser::parse(request) {
+                        Some(packet) => match packet {
+                            PacketTypes::Metar(metar) => {
+                                if !metar.is_response {
+                                    weather.request_weather(&metar.payload)
+                                }
+                            },
+                            PacketTypes::ATCPosition(position) => {
+                                // Update callsign
+                                if current_callsign != position.callsign {
+                                    // Recognize callsign as a valid controller
+                                    current_callsign = position.callsign.to_string();
+                                    stream.write(build_validate_atc_string(&current_callsign).as_bytes()).ok();
+                                }
+                            },
+                            PacketTypes::ClientQuery(cq) => match cq.payload {
+                                ClientQueryPayload::FlightPlan(callsign) => {
+                                    if let Some(data) = tracker.get_data_for_callsign(&callsign) {
+                                        if let Some(fp) = &data.fp {
+                                            stream.write(build_flightplan_string(&callsign, fp).as_bytes()).ok();
+                                        }
+                                    }
+                                }
+                                _ => ()
+                            }
+                            _ => ()
+                        },
+                        None => ()
                     }
-                    _ => ()
-                },
-                None => ()
+                }
             }
 
             // Step stuff

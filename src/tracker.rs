@@ -13,7 +13,7 @@ pub struct Tracker {
     buffer: VecDeque<HashMap<String, AircraftData>>,
     is_buffering: bool,
     tracking: HashMap<String, TrackData>,
-    callsign_set: HashSet<String>,
+    callsign_map: HashMap<String, String>,
     time: Instant,
 
     floor: i32,
@@ -29,7 +29,7 @@ impl Tracker {
             buffer: VecDeque::new(),
             is_buffering: false,
             tracking: HashMap::new(),
-            callsign_set: HashSet::new(),
+            callsign_map: HashMap::new(),
             time: Instant::now(),
 
             floor,
@@ -74,8 +74,8 @@ impl Tracker {
 
     fn check_and_create_new_aircraft(&mut self, id: &String, data: &AircraftData) -> bool { // if aircraft was created        
         if self.tracking.get(id).is_none() {
-            if self.callsign_set.contains(&data.callsign) {return false}
-            self.callsign_set.insert(data.callsign.clone());
+            if self.callsign_map.contains_key(&data.callsign) {return false}
+            self.callsign_map.insert(data.callsign.clone(), id.clone());
             self.tracking.insert(id.clone(), TrackData {
                 data: data.clone(),
                 id: id.clone(),
@@ -90,7 +90,7 @@ impl Tracker {
         let old_data: HashSet<String> = self.tracking.keys().map(|x| x.clone()).collect();
         for untracked in old_data.difference(&new_data) {
             let data = self.tracking.remove(untracked).unwrap();
-            self.callsign_set.remove(&data.data.callsign);
+            self.callsign_map.remove(&data.data.callsign);
         }
     }
 
@@ -128,6 +128,7 @@ impl Tracker {
     // Step
     fn step_flightplan(&mut self) {
         if let Some(result) = self.faware.get_next_flightplan() {
+            println!("{:?}", result);
             match result {
                 Ok(fp) => self.update_flightplan(&fp.id, fp.fp),
                 Err(_) => ()
@@ -142,6 +143,10 @@ impl Tracker {
 
     pub fn get_aircraft_data(&mut self) -> Vec<&mut TrackData> {
         return self.tracking.values_mut().map(|x| x).collect();
+    }
+
+    pub fn get_data_for_callsign(&self, callsign: &String) -> Option<&TrackData> {
+        return Some(self.tracking.get(self.callsign_map.get(callsign)?)?)
     }
 
     pub fn step(&mut self) {
