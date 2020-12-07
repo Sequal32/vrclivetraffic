@@ -24,8 +24,13 @@ Boston Center
     ```
     127.0.0.1 LIVE TRAFFIC
     ```
+   For Euroscope:
+   Open or *create* `myipaddr.txt` in `Documents/EuroScope`. Add the following entry: 
+    ```
+    127.0.0.1 LIVE-TRAFFIC
+    ```
 5. Start `livetraffic.exe`
-6. Connect using the new server in VRC.
+6. Connect using the new server in VRC/Euroscope.
 7. Optional: Listen to [LiveATC](https://www.liveatc.net/)
 
 ## Configuration
