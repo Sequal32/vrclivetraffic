@@ -128,7 +128,6 @@ impl Tracker {
     // Step
     fn step_flightplan(&mut self) {
         if let Some(result) = self.faware.get_next_flightplan() {
-            println!("{:?}", result);
             match result {
                 Ok(fp) => self.update_flightplan(&fp.id, fp.fp),
                 Err(_) => ()

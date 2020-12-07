@@ -105,7 +105,7 @@ fn main() {
         println!("Connection established! {}", addr.to_string());
 
         // Confirms connection with connect
-        stream.write("$DISERVER:CLIENT:LIVE ATC:\r\n".as_bytes()).ok();
+        stream.write("$DISERVER:CLIENT:VATSIM FSD V3.14:\r\n".as_bytes()).ok();
 
         stream.set_nonblocking(true).ok();
 
