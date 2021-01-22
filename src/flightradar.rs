@@ -1,5 +1,6 @@
+use crate::error::Error;
 use crate::util::Bounds;
-use reqwest::blocking;
+use attohttpc;
 use serde_json::{self, Value};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -36,20 +37,18 @@ impl AircraftData {
 }
 
 pub struct FlightRadar {
-    client: blocking::Client,
     radar_loc: Bounds
 }
 
 impl FlightRadar {
-    pub fn new(radar_loc: &Bounds) -> Self {
+    pub fn new(radar_loc: Bounds) -> Self {
         Self {
-            client: blocking::Client::new(),
-            radar_loc: radar_loc.clone()
+            radar_loc: radar_loc
         }
     }
 
-    pub fn get_aircraft(&self) -> Result<HashMap<String, AircraftData>, ()> {
-        let response = self.client.get(
+    pub fn get_aircraft(&self) -> Result<HashMap<String, AircraftData>, Error> {
+        let response = attohttpc::get(
             format!("{}&bounds={:.2},{:.2},{:.2},{:.2}", 
                 ENDPOINT, 
                 self.radar_loc.lat1, 
@@ -57,25 +56,21 @@ impl FlightRadar {
                 self.radar_loc.lon1, 
                 self.radar_loc.lon2
             ).as_str()
-        ).send();
+        ).send()?
+        .error_for_status()?;
 
         let mut return_data = HashMap::new();
-        
-        if !response.is_ok() {return Err(())}
 
-        if let Ok(text) = response.unwrap().text() {
-            // Parse as JSON
-            let data: Value = serde_json::from_str(text.as_str()).unwrap();
-            // Iterate through aircraft
-            for (index, value) in data.as_object().unwrap() {
-                // Skip over stats data like numbers and objects
-                if !value.is_array() {continue}
-                let data: AircraftData = serde_json::from_value(value.clone()).unwrap();
-                return_data.insert(index.clone(), data);
-            }
-            return Ok(return_data);
+        let data: Value = serde_json::from_str(&response.text()?)?;
+
+        // Iterate through aircraft
+        for (index, value) in data.as_object().unwrap() {
+            // Skip over stats data like numbers and objects
+            if !value.is_array() {continue}
+            let data: AircraftData = serde_json::from_value(value.clone()).unwrap();
+            return_data.insert(index.clone(), data);
         }
-
-        return Err(())
+        
+        Ok(return_data)
     }
 }

@@ -1,4 +1,5 @@
 mod airports;
+mod error;
 mod interpolate;
 mod flightradar;
 mod flightaware;
@@ -110,7 +111,7 @@ fn main() {
         stream.set_nonblocking(true).ok();
 
         // Instantiate main tracker
-        let mut tracker = Tracker::new(&bounds, config.floor, config.ceiling);
+        let mut tracker = Tracker::new(bounds.clone(), config.floor, config.ceiling);
         // Start loops to listen for data
         tracker.run();
 

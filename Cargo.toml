@@ -7,11 +7,11 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+attohttpc = "0.16"
 crossbeam-channel = "0.4"
-crossbeam-deque = "0.7"
+crossbeam-deque = "0.8"
 csv = "1.1"
 regex = "1"
-reqwest = {version = "0.10.8", features=["blocking"]}
 serde_json = "1.0"
 serde = {version = "1.0", features=["derive"]}
 fsdparser = {git="https://github.com/Sequal32/vatsimfsdparser"}

@@ -1,9 +1,8 @@
-use std::sync::{Arc, Mutex};
-
-use reqwest::blocking::Client;
+use attohttpc;
 use regex;
 use serde_json::{Value, Map};
 
+use crate::error::Error;
 use crate::request::Request;
 
 const ENDPOINT: &str = "https://flightaware.com/live/flight/";
@@ -78,57 +77,40 @@ pub struct FlightPlanResult {
 }
 
 pub struct FlightAware {
-    client: Arc<Mutex<Client>>,
-    flightplans: Request<Result<FlightPlanResult, FlightAwareError>, FlightPlanRequest>
-}
-
-#[derive(Debug)]
-pub enum FlightAwareError {
-    RequestFailed(String),
-    ParseError(String),
+    flightplans: Request<Result<FlightPlanResult, Error>, FlightPlanRequest>
 }
 
 impl FlightAware {
     pub fn new() -> Self {
         Self {
-            client: Arc::new(Mutex::new(Client::new())),
             flightplans: Request::new(5)
         }
     }
 
     pub fn run(&self) {
-        let client = self.client.clone();
         let exp = regex::Regex::new(r"var trackpollBootstrap = (\{.+\});").unwrap();
 
         self.flightplans.run(move |job| {
             // Get data from flightaware
-            let response = match client.lock().unwrap().get(format!("{}{}", ENDPOINT, job.callsign).as_str()).send() {
-                Ok(r) => r,
-                Err(_) => return Err(FlightAwareError::RequestFailed(job.callsign))
-            };
-
-            let text = match response.text() {
-                Ok(t) => t,
-                Err(_) => return Err(FlightAwareError::ParseError(job.callsign))
-            };
+            let text = attohttpc::get(ENDPOINT.to_owned() + &job.callsign)
+                .send()?
+                .error_for_status()?
+                .text()?;
             
             let mut data: &str = "";
             // Parse json from html
-            for cap in exp.captures(text.as_str()) {
+            for cap in exp.captures(&text) {
                 data = cap.get(1).unwrap().as_str();
                 break;
             }
 
             // Deserialize into Value
-            let data: Value = match serde_json::from_str(data) {
-                Ok(d) => d,
-                Err(_) => return Err(FlightAwareError::ParseError(job.callsign))
-            };
+            let data: Value = serde_json::from_str(data)?;
 
-            return match get_flightplan_from_json(&data) {
+            match get_flightplan_from_json(&data) {
                 Some(fp) => Ok(FlightPlanResult {callsign: job.callsign, id: job.id, fp: fp}),
-                None => Err(FlightAwareError::ParseError(job.callsign))
-            };
+                None => Err(Error::NotFound)
+            }
         });
     }
 
@@ -139,7 +121,7 @@ impl FlightAware {
         });
     }
 
-    pub fn get_next_flightplan(&self) -> Option<Result<FlightPlanResult, FlightAwareError>> {
+    pub fn get_next_flightplan(&self) -> Option<Result<FlightPlanResult, Error>> {
         return self.flightplans.get_next();
     }
 }

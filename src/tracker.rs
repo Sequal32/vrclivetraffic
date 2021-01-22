@@ -21,7 +21,7 @@ pub struct Tracker {
 }
 
 impl Tracker {
-    pub fn new(radar_loc: &Bounds, floor: i32, ceiling: i32) -> Self {
+    pub fn new(radar_loc: Bounds, floor: i32, ceiling: i32) -> Self {
         Self {
             radar: FlightRadar::new(radar_loc),
             faware: FlightAware::new(),
