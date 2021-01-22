@@ -1,4 +1,4 @@
-use crate::error::Error;
+use crate::{error::Error, util::{AircraftProvider, MinimalAircraftData}};
 use crate::util::Bounds;
 use attohttpc;
 use serde_json::{self, Value};
@@ -30,34 +30,29 @@ pub struct AircraftData {
     pub airline: String
 }
 
-impl AircraftData {
-    pub fn is_on_ground(&self) -> bool {
-        return self.is_on_ground == 1
-    }
-}
-
 pub struct FlightRadar {
-    radar_loc: Bounds
+    base_url: String
 }
 
 impl FlightRadar {
-    pub fn new(radar_loc: Bounds) -> Self {
+    pub fn new(radar_loc: &Bounds) -> Self {
         Self {
-            radar_loc: radar_loc
+            base_url: format!("{}&bounds={:.2},{:.2},{:.2},{:.2}", 
+                ENDPOINT, 
+                radar_loc.lat1, 
+                radar_loc.lat2, 
+                radar_loc.lon1, 
+                radar_loc.lon2
+            )
         }
     }
+}
 
-    pub fn get_aircraft(&self) -> Result<HashMap<String, AircraftData>, Error> {
-        let response = attohttpc::get(
-            format!("{}&bounds={:.2},{:.2},{:.2},{:.2}", 
-                ENDPOINT, 
-                self.radar_loc.lat1, 
-                self.radar_loc.lat2, 
-                self.radar_loc.lon1, 
-                self.radar_loc.lon2
-            ).as_str()
-        ).send()?
-        .error_for_status()?;
+impl AircraftProvider for FlightRadar {
+    fn get_aircraft(&mut self) -> Result<HashMap<String, MinimalAircraftData>, Error> {
+        let response = attohttpc::get(&self.base_url)
+            .send()?
+            .error_for_status()?;
 
         let mut return_data = HashMap::new();
 
@@ -67,10 +62,26 @@ impl FlightRadar {
         for (index, value) in data.as_object().unwrap() {
             // Skip over stats data like numbers and objects
             if !value.is_array() {continue}
+
             let data: AircraftData = serde_json::from_value(value.clone()).unwrap();
-            return_data.insert(index.clone(), data);
+
+            return_data.insert(index.clone(), MinimalAircraftData {
+                squawk: data.squawk_code,
+                callsign: data.callsign,
+                is_on_ground: data.is_on_ground == 1,
+                latitude: data.latitude,
+                longitude: data.longitude,
+                heading: data.bearing,
+                ground_speed: data.speed,
+                timestamp: data.timestamp,
+                altitude: data.altitude,
+            });
         }
-        
+
         Ok(return_data)
+    }
+
+    fn get_name(&self) -> &str {
+        "FlightRadar24"
     }
 }

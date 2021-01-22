@@ -39,7 +39,7 @@ impl<T, J> Request<T, J> where T: Send + 'static, J: Send + 'static {
                             },
                             _ => ()
                         }
-                        thread::sleep(std::time::Duration::from_millis(10));
+                        thread::sleep(std::time::Duration::from_millis(500));
                     }
                 });
             }

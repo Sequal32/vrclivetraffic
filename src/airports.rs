@@ -58,10 +58,10 @@ impl Airports {
 
         Some(
             Bounds {
-                lat1: center.lat + offset.lat,
-                lon1: center.lon - offset.lon,
-                lat2: center.lat - offset.lat,
-                lon2: center.lon + offset.lon,
+                lat1: center.lat + offset.lat, // Right
+                lon1: center.lon - offset.lon, // Bottom
+                lat2: center.lat - offset.lat, // Left
+                lon2: center.lon + offset.lon, // Top
             }
         )
     }

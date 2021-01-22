@@ -1,5 +1,5 @@
 # Live Traffic for VATSIM Clients
-This program brings the real world into VRC and any other server-configurable clients for VATSIM. It offers data pulled from flightradar24, flightplans from flightaware, and metars from the NOAA.
+This program brings the real world into VRC and any other server-configurable clients for VATSIM. It offers data pulled from FlightRadar24 and ADSBExchange, flightplans from FlightAware, and metars from the NOAA.
 
 ## Preview
 <details>
@@ -40,7 +40,7 @@ Boston Center
     "airport": "KBOS",      - The airport to view aircraft at
     "delay": 0,             - How much time to buffer before displaying aircraft, useful for syncing with LiveATC
     "range": 30,            - How far away from the airport (in miles) aircraft should be shown
-    "floor": 0,             - Aircraft below this altitude (in feet) will not be displayed
-    "ceiling": 99999,       - Aircraft above this altitude will not be displayed
+    "floor": 0,             - Aircraft below this altitude (in feet) will not be processed
+    "ceiling": 99999,       - Aircraft above this altitude will not be processed
 }
 ```

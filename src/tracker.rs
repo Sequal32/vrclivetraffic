@@ -1,16 +1,16 @@
-use std::{collections::HashMap, time::Instant, collections::{HashSet, VecDeque}, collections::hash_map::Keys};
+use std::{collections::HashMap, time::Instant, collections::{HashSet, VecDeque}};
 
-use crate::util::Bounds;
-use crate::{flightradar::{AircraftData, FlightRadar}, interpolate::InterpolatePosition};
+use crate::{adsbexchange::AdsbExchange, util::{AircraftProvider, Bounds, MinimalAircraftData}};
+use crate::{flightradar::{ FlightRadar}, interpolate::InterpolatePosition};
 use crate::flightaware::{FlightPlan, FlightAware};
 
 const POLL_RATE: u64 = 3;
 
 pub struct Tracker {
-    radar: FlightRadar,
+    providers: Vec<Box<dyn AircraftProvider>>,
     faware: FlightAware,
 
-    buffer: VecDeque<HashMap<String, AircraftData>>,
+    buffer: VecDeque<Vec<(String, MinimalAircraftData)>>,
     is_buffering: bool,
     tracking: HashMap<String, TrackData>,
     callsign_map: HashMap<String, String>,
@@ -21,9 +21,12 @@ pub struct Tracker {
 }
 
 impl Tracker {
-    pub fn new(radar_loc: Bounds, floor: i32, ceiling: i32) -> Self {
+    pub fn new(radar_loc: &Bounds, floor: i32, ceiling: i32) -> Self {
         Self {
-            radar: FlightRadar::new(radar_loc),
+            providers: vec![
+                Box::new(FlightRadar::new(radar_loc)),
+                Box::new(AdsbExchange::new(radar_loc))
+            ],
             faware: FlightAware::new(),
 
             buffer: VecDeque::new(),
@@ -59,7 +62,7 @@ impl Tracker {
         
     }
 
-    fn update_position(&mut self, id: &String, new_data: &AircraftData) {
+    fn update_position(&mut self, id: &String, new_data: &MinimalAircraftData) {
         let prev_data = self.tracking.get_mut(id);
         if prev_data.is_none() {return}
         let prev_data = prev_data.unwrap();
@@ -67,15 +70,19 @@ impl Tracker {
         if new_data.timestamp <= prev_data.last_position_update {return}
 
         prev_data.data = new_data.clone();
-        prev_data.position = InterpolatePosition::new(new_data.latitude, new_data.longitude, new_data.bearing, new_data.speed);
+        prev_data.position = InterpolatePosition::new(new_data.latitude, new_data.longitude, new_data.heading, new_data.ground_speed);
         prev_data.last_position_update = new_data.timestamp;
         prev_data.at_last_position_update = Some(Instant::now());
     }
 
-    fn check_and_create_new_aircraft(&mut self, id: &String, data: &AircraftData) -> bool { // if aircraft was created        
+    fn check_and_create_new_aircraft(&mut self, id: &String, data: &MinimalAircraftData) -> bool { // if aircraft was created        
         if self.tracking.get(id).is_none() {
+            // Callsign is valid (FlightRadar24 sometimes puts the aircraft type as the callsign...)
+            if data.callsign.len() <= 4 {return false}
+            // Callsign doesn't already exist
             if self.callsign_map.contains_key(&data.callsign) {return false}
             self.callsign_map.insert(data.callsign.clone(), id.clone());
+
             self.tracking.insert(id.clone(), TrackData {
                 data: data.clone(),
                 id: id.clone(),
@@ -85,19 +92,38 @@ impl Tracker {
         return true;
     }
 
-    fn remove_untracked(&mut self, keys: Keys<String, AircraftData>) {
-        let new_data: HashSet<String> = keys.map(|x| x.clone()).collect();
-        let old_data: HashSet<String> = self.tracking.keys().map(|x| x.clone()).collect();
-        for untracked in old_data.difference(&new_data) {
-            let data = self.tracking.remove(untracked).unwrap();
+    // Removes aircraft that have been lost on radar
+    fn remove_untracked(&mut self, keys: &HashSet<String>) {
+        let mut to_remove = Vec::new();
+
+        for key in self.tracking.keys() {
+            if !keys.contains(key) {
+                to_remove.push(key.clone());
+            }
+        }
+
+        for removing in to_remove {
+            let data = self.tracking.remove(&removing).unwrap();
             self.callsign_map.remove(&data.data.callsign);
         }
     }
 
-    fn get_next_aircraft_update(&mut self) -> Option<HashMap<String, AircraftData>> {
-        if let Ok(aircraft) = self.radar.get_aircraft() {
-            self.buffer.push_back(aircraft);
+    fn get_next_aircraft_update(&mut self) -> Option<Vec<(String, MinimalAircraftData)>> {
+        // A vector is used here instead as we want to keep duplicates in case one of the provider's data fails to validate
+        let mut all_data = Vec::new();
+
+        for provider in self.providers.iter_mut() {
+            match provider.get_aircraft() {
+                Ok(aircraft) => {
+                    for (key, value) in aircraft {
+                        all_data.push((key, value));
+                    }
+                }
+                Err(e) => println!("Error fetching data from {}! Reason: {:?}", provider.get_name(), e)
+            }
         }
+
+        self.buffer.push_back(all_data);
 
         if !self.is_buffering {
             return self.buffer.pop_front();
@@ -112,17 +138,24 @@ impl Tracker {
             None => return
         };
 
-        for (id, aircraft) in aircraft.iter() {
+        let mut processed_ids = HashSet::new();
+
+        for (id, aircraft) in aircraft {
+            // Providers may be tracking the same aircraft
+            if processed_ids.contains(&id) {continue}
             // Invalid callsigns/callsign not received
             if aircraft.callsign.trim() == "" {continue}
             if aircraft.altitude < self.floor || aircraft.altitude > self.ceiling {continue}
-            if !self.check_and_create_new_aircraft(id, aircraft) {continue} // can't use aircrat
+            if !self.check_and_create_new_aircraft(&id, &aircraft) {continue} // can't use aircrat
+            
 
-            self.update_position(id, aircraft);
-            self.try_update_flightplan(id);
+            self.update_position(&id, &aircraft);
+            self.try_update_flightplan(&id);
+
+            processed_ids.insert(id);
         }
 
-        self.remove_untracked(aircraft.keys());
+        self.remove_untracked(&processed_ids);
     }
 
     // Step
@@ -182,5 +215,5 @@ pub struct TrackData {
     pub at_last_position_update: Option<Instant>,
     pub position: InterpolatePosition,
     // Meta data
-    pub data: AircraftData
+    pub data: MinimalAircraftData
 }

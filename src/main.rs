@@ -1,3 +1,4 @@
+mod adsbexchange;
 mod airports;
 mod error;
 mod interpolate;
@@ -18,18 +19,18 @@ use tracker::{TrackData, Tracker};
 fn build_aircraft_string(data: &mut TrackData, should_interpolate: bool) -> String {
     let ac_data = &data.data;
     // Calculate PBH
-    let h = ac_data.bearing as f64/360.0 * 1024.0;
+    let h = ac_data.heading as f64/360.0 * 1024.0;
     let pbh: i32 = 0 << 22 | 0 << 12 | (h as i32) << 2;
 
     let pos = if should_interpolate {data.position.get()} else {data.position.get_no_update()};
 
     format!("@N:{callsign}:{squawk}:1:{lat}:{lon}:{alt}:{speed}:{pbh}:0\r\n", 
         callsign = ac_data.callsign,
-        squawk = ac_data.squawk_code,
+        squawk = ac_data.squawk,
         lat = pos.lat,
         lon = pos.lon,
         alt = ac_data.altitude,
-        speed = ac_data.speed,
+        speed = ac_data.ground_speed,
         pbh = pbh
     )
 }
@@ -111,7 +112,7 @@ fn main() {
         stream.set_nonblocking(true).ok();
 
         // Instantiate main tracker
-        let mut tracker = Tracker::new(bounds.clone(), config.floor, config.ceiling);
+        let mut tracker = Tracker::new(&bounds, config.floor, config.ceiling);
         // Start loops to listen for data
         tracker.run();
 
@@ -128,7 +129,7 @@ fn main() {
         'main: loop {
             tracker.step();
 
-            let should_update_position = timer.elapsed().as_secs_f32() >= 3.0;
+            let should_update_position = timer.elapsed().as_secs_f32() >= 5.0;
 
             let ac_data = tracker.get_aircraft_data();
             let aircraft_count = ac_data.len();
@@ -140,13 +141,17 @@ fn main() {
                 };
                 // Update position either in place or interpolated
                 if should_update_position {
-                    let should_interpolate = !aircraft.data.is_on_ground() && aircraft.at_last_position_update.unwrap().elapsed().as_secs() < 20;
+                    let should_interpolate = !aircraft.data.is_on_ground && aircraft.at_last_position_update.unwrap().elapsed().as_secs() < 20;
                     if let Err(_) = stream.write(build_aircraft_string(aircraft, should_interpolate).as_bytes()) {break 'main};
                 }
                 // Give the aircraft a flight plan 
                 if !tracked.did_set_fp && aircraft.fp.is_some() {
                     stream.write(build_flightplan_string(&aircraft.data.callsign, aircraft.fp.as_ref().unwrap()).as_bytes()).ok();
-                    stream.write(build_beacon_code_string(&current_callsign, &aircraft.data.callsign, &aircraft.data.squawk_code).as_bytes()).ok();
+                    // Not squawking anything... will have duplicates if we assign an empty code
+                    if aircraft.data.squawk != "0000" {
+                        stream.write(build_beacon_code_string(&current_callsign, &aircraft.data.callsign, &aircraft.data.squawk).as_bytes()).ok();
+                    }
+                    
                     tracked.did_set_fp = true;
                 }
             }
@@ -199,7 +204,7 @@ fn main() {
                                 ClientQueryPayload::IsValidATCQuery(callsign) => {
                                     // Recognize callsign as a valid controller
                                     current_callsign = cq.from.to_string();
-
+                                    // Some ATC clients handle validating ATC differently
                                     if callsign.is_some() {
                                         stream.write(build_validate_atc_string_with_callsign(&current_callsign).as_bytes()).ok();
                                     } else {

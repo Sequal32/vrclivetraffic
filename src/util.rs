@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+
+use crate::error::Error;
+
 pub fn convert_miles_to_lat(miles: f32) -> f32{
     return miles / 69.0
 }
@@ -36,4 +40,22 @@ pub struct Bounds {
     pub lon1: f32,
     pub lat2: f32,
     pub lon2: f32,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct MinimalAircraftData {
+    pub squawk: String,
+    pub callsign: String,
+    pub is_on_ground: bool,
+    pub latitude: f32,
+    pub longitude: f32,
+    pub heading: u32,
+    pub ground_speed: u32,
+    pub timestamp: u64,
+    pub altitude: i32,
+}
+
+pub trait AircraftProvider {
+    fn get_aircraft(&mut self) -> Result<HashMap<String, MinimalAircraftData>, Error>;
+    fn get_name(&self) -> &str;
 }
