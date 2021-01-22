@@ -12,8 +12,8 @@ mod util;
 use airports::Airports;
 use flightaware::FlightPlan;
 use fsdparser::{Parser, PacketTypes, ClientQueryPayload};
-use serde::Deserialize;
-use std::{net::TcpListener, io::Write, time::Instant, collections::{HashMap, hash_map::Entry}, fs::File, io::Read};
+use serde::{Deserialize, Serialize};
+use std::{collections::{HashMap, hash_map::Entry}, fmt::Display, fs::File, io::Read, io::Write, net::TcpListener, time::Instant};
 use tracker::{TrackData, Tracker};
 
 fn build_aircraft_string(data: &mut TrackData, should_interpolate: bool) -> String {
@@ -68,7 +68,7 @@ struct TrackedData {
     did_set_fp: bool
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct ConfigData {
     airport: String,
     range: u32,
@@ -77,23 +77,63 @@ struct ConfigData {
     ceiling: i32,
 }
 
+impl Default for ConfigData {
+    fn default() -> Self {
+        Self {
+            airport: String::new(),
+            range: 30,
+            delay: 0,
+            floor: 0,
+            ceiling: 99999,
+        }
+    }
+}
+
 const CONFIG_FILENAME: &str = "config.json";
 const AIRPORT_DATA_FILENAME: &str = "airports.dat";
 
+fn read_config() -> Result<ConfigData, std::io::Error> {
+    let file = File::open(CONFIG_FILENAME)?;
+    Ok(serde_json::from_reader(file)?)
+}
+
+fn display_msg_and_exit(msg: impl Display) {
+    println!("{}\nPress the enter key to exit.", msg);
+    // Wait for enter key
+    let mut buf = String::new();
+    std::io::stdin().read_line(&mut buf).ok();
+    std::process::exit(0);
+}
+
 fn main() {
-    let listener = TcpListener::bind("127.0.0.1:6809").unwrap();
+    let listener = match TcpListener::bind("127.0.0.1:6809") {
+        Ok(l) => l,
+        Err(e) => {display_msg_and_exit(format!("Could not start server! Reason: {}", e)); return;}
+    };
 
     // Read from config
-    let config: ConfigData = {
-        let mut file = File::open(CONFIG_FILENAME).expect("Could not read config.json!");
-        let mut data = Vec::new();
-        file.read_to_end(&mut data).expect("Could not read config.json!");
-        serde_json::from_str(String::from_utf8(data).expect("Error decoding file!").as_str()).expect("Config.json is invalid.")
+    let config: ConfigData = match read_config() {
+        Ok(config) => config,
+        Err(_) => {
+            let config = ConfigData::default();
+            serde_json::to_writer_pretty(File::create(CONFIG_FILENAME).unwrap(), &config).ok();
+
+            display_msg_and_exit("Could not read config.json! Please set an airport ICAO and range in the newly created file.");
+
+            config
+        }
     };
 
     // Load airports
-    let airports = Airports::new(AIRPORT_DATA_FILENAME).expect("Could not read airports.dat!");
-    let bounds = airports.get_bounds_from_radius(&config.airport, config.range as f32).expect("Airport does not exist!");
+    let airports = match Airports::new(AIRPORT_DATA_FILENAME) {
+        Ok(airports) => airports,
+        Err(e) => {display_msg_and_exit(format!("Could not read airports.dat! Reason: {}", e)); return;}
+    };
+
+    let bounds = match airports.get_bounds_from_radius(&config.airport, config.range as f32) {
+        Some(b) => b,
+        None => {display_msg_and_exit(format!("The airport {} does not exist!", config.airport)); return;}
+    };
 
     // Weather
     let weather = noaa::NoaaWeather::new();
