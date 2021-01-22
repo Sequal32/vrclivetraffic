@@ -127,12 +127,21 @@ fn main() {
     // Load airports
     let airports = match Airports::new(AIRPORT_DATA_FILENAME) {
         Ok(airports) => airports,
-        Err(e) => {display_msg_and_exit(format!("Could not read airports.dat! Reason: {}", e)); return;}
+        Err(e) => {
+            display_msg_and_exit(format!("Could not read airports.dat! Reason: {}", e)); 
+            return;
+        }
     };
 
     let bounds = match airports.get_bounds_from_radius(&config.airport, config.range as f32) {
-        Some(b) => b,
-        None => {display_msg_and_exit(format!("The airport {} does not exist!", config.airport)); return;}
+        Some(b) => {
+            println!("Airport set to {}", config.airport);
+            b
+        },
+        None => {
+            display_msg_and_exit(format!("The airport {} does not exist!", config.airport)); 
+            return;
+        }
     };
 
     // Weather

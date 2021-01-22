@@ -1,10 +1,10 @@
 mod bincraft;
 mod util;
-use std::collections::{HashMap, HashSet};
-
-use attohttpc::{PreparedRequest, Session, body::Empty, head};
 pub use bincraft::*;
+
+use attohttpc::{PreparedRequest, Session, body::Empty};
 use crate::{error::Error, util::{AircraftProvider, Bounds, MinimalAircraftData}};
+use std::collections::{HashMap, HashSet};
 
 const GLOBE_INDEX_GRID: f32 = 3.0;
 const ENDPOINT: &str = "https://globe.adsbexchange.com/data";
