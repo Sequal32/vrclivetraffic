@@ -137,9 +137,9 @@ impl FlightData {
         let ua8 = &bytes[0..stride];
 
         // Hex
-        let mut hex = format!("{:x}", s32[0] & ((1 << 24) - 1));
+        let mut hex = format!("{:x}", s32[0] & ((1 << 24) - 1)).to_uppercase();
         if (s32[0] & (1 << 24)) & (1 << 24) != 0 {
-            hex = "~".to_owned() + &hex.to_uppercase();
+            hex = "~".to_owned() + &hex;
         }
 
         let callsign = convert_char_array_to_string(&ua8[78..86]);
@@ -165,12 +165,12 @@ impl FlightData {
             },
             last_seen: ua16[3] / 10,
             lat: if ua8[73] & 64 != 0 {
-                Some(s32[2] as f64 / 1e6)
+                Some(s32[3] as f64 / 1e6)
             } else {
                 None
             },
             lon: if ua8[73] & 64 != 0 {
-                Some(s32[3] as f64 / 1e6)
+                Some(s32[2] as f64 / 1e6)
             } else {
                 None
             },
