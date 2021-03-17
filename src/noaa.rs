@@ -25,18 +25,21 @@ impl NoaaWeather {
                 .error_for_status()?
                 .text()?;
             // Ignore first lines of metadata
-            let text  = text.split("\n").skip(5).map(|x| x.to_string()).collect::<Vec<String>>().join("\n");
+            let text = text
+                .split("\n")
+                .skip(5)
+                .map(|x| x.to_string())
+                .collect::<Vec<String>>()
+                .join("\n");
 
             // Parse csv
             let mut reader = csv::Reader::from_reader(text.as_bytes());
             for record in reader.records() {
                 match record {
-                    Ok(record) => {
-                        return Ok(record[0].to_string())
-                    }
-                    _ => ()
+                    Ok(record) => return Ok(record[0].to_string()),
+                    _ => (),
                 }
-            };
+            }
             return Err(Error::NotFound);
         });
     }

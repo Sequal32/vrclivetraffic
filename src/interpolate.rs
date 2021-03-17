@@ -1,5 +1,5 @@
+use crate::util::{convert_miles_to_lat, convert_miles_to_lon, LatLon, Vector2D};
 use std::time::Instant;
-use crate::util::{LatLon, Vector2D, convert_miles_to_lat, convert_miles_to_lon};
 
 const INTERPOLATE_OFFSET: f32 = 0.5;
 
@@ -7,16 +7,16 @@ pub struct InterpolatePosition {
     pos: LatLon,
     speed: LatLon,
     time: Instant,
-    last_call: LatLon
+    last_call: LatLon,
 }
 
 impl Default for InterpolatePosition {
     fn default() -> Self {
         Self {
             time: Instant::now(),
-            pos: LatLon {lat: 0.0, lon: 0.0},
-            speed: LatLon {lat: 0.0, lon: 0.0},
-            last_call: LatLon {lat: 0.0, lon: 0.0},
+            pos: LatLon { lat: 0.0, lon: 0.0 },
+            speed: LatLon { lat: 0.0, lon: 0.0 },
+            last_call: LatLon { lat: 0.0, lon: 0.0 },
         }
     }
 }
@@ -24,15 +24,16 @@ impl Default for InterpolatePosition {
 impl InterpolatePosition {
     pub fn new(lat: f32, lon: f32, heading: u32, speed: u32) -> Self {
         let speed = Vector2D::from_heading_and_speed(heading as f32, speed as f32);
-        let speed_in_lat_lon = LatLon { // Also to seconds
+        let speed_in_lat_lon = LatLon {
+            // Also to seconds
             lat: convert_miles_to_lat(speed.x) / 3600.0,
-            lon: convert_miles_to_lon(speed.y) / 3600.0
+            lon: convert_miles_to_lon(speed.y) / 3600.0,
         };
 
         Self {
-            pos: LatLon {lat, lon},
-            last_call: LatLon {lat, lon},
-            speed: speed_in_lat_lon, 
+            pos: LatLon { lat, lon },
+            last_call: LatLon { lat, lon },
+            speed: speed_in_lat_lon,
             time: Instant::now(),
         }
     }

@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use crate::util::{convert_miles_to_lat, convert_miles_to_lon, Bounds, LatLon};
 use csv;
-use serde::{Deserialize};
-use crate::util::{LatLon, Bounds, convert_miles_to_lat, convert_miles_to_lon};
+use serde::Deserialize;
+use std::collections::HashMap;
 
 #[derive(Deserialize, Debug)]
 pub struct AirportData {
@@ -22,7 +22,7 @@ pub struct AirportData {
 }
 
 pub struct Airports {
-    db: HashMap<String, AirportData>
+    db: HashMap<String, AirportData>,
 }
 
 impl Airports {
@@ -35,34 +35,29 @@ impl Airports {
             db.insert(record.icao.clone(), record);
         }
 
-        Ok(
-            Self {
-                db
-            }
-        )
+        Ok(Self { db })
     }
 
     pub fn get_lat_lon(&self, icao: &String) -> Option<LatLon> {
         let data = self.db.get(icao)?;
-        Some(
-            LatLon {
-                lat: data.lat,
-                lon: data.lon
-            }
-        )
+        Some(LatLon {
+            lat: data.lat,
+            lon: data.lon,
+        })
     }
 
     pub fn get_bounds_from_radius(&self, icao: &String, radius: f32) -> Option<Bounds> {
         let center = self.get_lat_lon(icao)?;
-        let offset = LatLon {lat: convert_miles_to_lat(radius), lon: convert_miles_to_lon(radius)};
+        let offset = LatLon {
+            lat: convert_miles_to_lat(radius),
+            lon: convert_miles_to_lon(radius),
+        };
 
-        Some(
-            Bounds {
-                lat1: center.lat + offset.lat, // Right
-                lon1: center.lon - offset.lon, // Bottom
-                lat2: center.lat - offset.lat, // Left
-                lon2: center.lon + offset.lon, // Top
-            }
-        )
+        Some(Bounds {
+            lat1: center.lat + offset.lat, // Right
+            lon1: center.lon - offset.lon, // Bottom
+            lat2: center.lat - offset.lat, // Left
+            lon2: center.lon + offset.lon, // Top
+        })
     }
 }

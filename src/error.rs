@@ -4,7 +4,7 @@ pub enum Error {
     CsvParseError(csv::Error),
     JSONParseError(serde_json::Error),
     IOError(std::io::Error),
-    NotFound
+    NotFound,
 }
 
 impl From<attohttpc::Error> for Error {
