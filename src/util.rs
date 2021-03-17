@@ -2,24 +2,24 @@ use std::collections::HashMap;
 
 use crate::error::Error;
 
-pub fn convert_miles_to_lat(miles: f32) -> f32{
-    return miles / 69.0
+pub fn convert_miles_to_lat(miles: f32) -> f32 {
+    return miles / 69.0;
 }
 
-pub fn convert_miles_to_lon(miles: f32) -> f32{
-    return miles / 54.6
+pub fn convert_miles_to_lon(miles: f32) -> f32 {
+    return miles / 54.6;
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct LatLon {
     pub lat: f32,
-    pub lon: f32
+    pub lon: f32,
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct Vector2D {
     pub x: f32,
-    pub y: f32
+    pub y: f32,
 }
 
 impl Vector2D {
@@ -29,7 +29,7 @@ impl Vector2D {
 
         Self {
             x: heading.to_radians().cos() * speed,
-            y: heading.to_radians().sin() * speed
+            y: heading.to_radians().sin() * speed,
         }
     }
 }
@@ -53,6 +53,9 @@ pub struct MinimalAircraftData {
     pub ground_speed: u32,
     pub timestamp: u64,
     pub altitude: i32,
+    pub model: String,
+    pub provider: String,
+    pub hex: String,
 }
 
 pub trait AircraftProvider {

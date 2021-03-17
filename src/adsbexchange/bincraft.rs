@@ -1,5 +1,8 @@
+use super::util::{
+    convert_char_array_to_string, fill_buf_i16, fill_buf_i32, fill_buf_u16, fill_buf_u32,
+    get_navmodes_from_num, get_track_type_from_num,
+};
 use radix_fmt::radix;
-use super::util::{convert_char_array_to_string, fill_buf_i16, fill_buf_i32, fill_buf_u16, fill_buf_u32, get_navmodes_from_num, get_track_type_from_num};
 
 #[derive(Debug)]
 pub enum NavModes {
@@ -8,7 +11,7 @@ pub enum NavModes {
     AltHold,
     Approach,
     Lnav,
-    Tcas
+    Tcas,
 }
 
 #[derive(Debug)]
@@ -26,7 +29,7 @@ pub enum TrackType {
     TisbTrackfile,
     TisbOther,
     ModeAc,
-    Unknown
+    Unknown,
 }
 
 #[derive(Debug)]
@@ -34,7 +37,7 @@ pub struct BoundingLimits {
     pub south: i16,
     pub west: i16,
     pub north: i16,
-    pub east: i16
+    pub east: i16,
 }
 
 impl BoundingLimits {
@@ -113,7 +116,6 @@ pub struct FlightData {
     pub nic_a: Option<u8>,
     pub nic_c: Option<u8>,
 
-
     pub flight: Option<String>,
 
     pub rssi: f64,
@@ -124,7 +126,7 @@ pub struct FlightData {
 
     pub nic_baro: Option<u8>,
     pub alert1: Option<u8>,
-    pub spi: Option<u8>
+    pub spi: Option<u8>,
 }
 
 impl FlightData {
@@ -137,7 +139,7 @@ impl FlightData {
         // Hex
         let mut hex = format!("{:x}", s32[0] & ((1 << 24) - 1));
         if (s32[0] & (1 << 24)) & (1 << 24) != 0 {
-            hex = "~".to_owned() + &hex;
+            hex = "~".to_owned() + &hex.to_uppercase();
         }
 
         let callsign = convert_char_array_to_string(&ua8[78..86]);
@@ -148,66 +150,218 @@ impl FlightData {
         let squawk = format!("{:0>4}", radix(ua16[16] as i32, 16));
 
         // Get nav modes
-        let nav_modes = if ua8[77] & 4 != 0 {Some(get_navmodes_from_num(ua8[66]))} else {None};
+        let nav_modes = if ua8[77] & 4 != 0 {
+            Some(get_navmodes_from_num(ua8[66]))
+        } else {
+            None
+        };
         let track_type = get_track_type_from_num((ua8[67] & 240) >> 4);
 
         Self {
-            last_pos:               if ua8[73] & 64 != 0 {Some(ua16[2] / 10)} else {None},
-            last_seen:                   ua16[3] / 10,
-            lat:                    if ua8[73] & 64 != 0 {Some(s32[2] as f64 / 1e6)} else {None},
-            lon:                    if ua8[73] & 64 != 0 {Some(s32[3] as f64 / 1e6)} else {None},
-            alt_baro:               if ua8[73] & 16 != 0 {Some(s16[8] as f64 * 25.0)} else {None},
-            alt_geom:               if ua8[73] & 32 != 0 {Some(s16[9] as f64 * 25.0)} else {None},
-            baro_rate:              if ua8[75] & 1 != 0 {Some(s16[10] as f64 * 8.0)} else {None},
-            geom_rate:              if ua8[75] & 2 != 0 {Some(s16[11] as f64 * 8.0)} else {None},
-            nav_altitude_mcp:       if ua8[76] & 64 != 0 {Some(ua16[12] * 4)} else {None},
-            nav_altitude_fms:       if ua8[76] & 128 != 0 {Some(ua16[13] * 4)} else {None},
-            nav_qnh:                if ua8[76] & 32 != 0 {Some(s16[14] as f64 / 10.0)} else {None},
-            nav_heading:            if ua8[77] & 2 != 0 {Some(s16[15] as f64 / 90.0)} else {None},
-            squawk:                 if ua8[76] & 4 != 0 {Some(squawk)} else {None},
-            gs:                     if ua8[73] & 128 != 0 {Some(s16[17] as f64 / 10.0)} else {None},
-            mach:                   if ua8[74] & 4 != 0 {Some(s16[18] as f64 / 1000.0)} else {None},
-            roll:                   if ua8[74] & 32 != 0 {Some(s16[19] as f64 / 100.0)} else {None},
-            track:                  if ua8[74] & 8 != 0 {Some(s16[20] as f64 / 90.0)} else {None},
-            track_rate:             if ua8[74] & 16 != 0 {Some(s16[21] as f64 / 100.0)} else {None},
-            mag_heading:            if ua8[74] & 64 != 0 {Some(s16[22] as f64 / 90.0)} else {None},
-            true_heading:           if ua8[74] & 128 != 0 {Some(s16[23] as f64 / 90.0)} else {None},
-            wd :                    if ua8[77] & 16 != 0 {Some(s16[24])} else {None},
-            ws :                    if ua8[77] & 16 != 0 {Some(s16[25])} else {None},
-            oat:                    if ua8[77] & 32 != 0 {Some(s16[26])} else {None},
-            tat:                    if ua8[77] & 32 != 0 {Some(s16[27])} else {None},
-            tas:                    if ua8[74] & 2 != 0 {Some(ua16[28])} else {None},
-            ias:                    if ua8[74] & 1 != 0 {Some(ua16[29])} else {None},
-            rc :                    ua16[30],
-            messages:               ua16[31],
+            last_pos: if ua8[73] & 64 != 0 {
+                Some(ua16[2] / 10)
+            } else {
+                None
+            },
+            last_seen: ua16[3] / 10,
+            lat: if ua8[73] & 64 != 0 {
+                Some(s32[2] as f64 / 1e6)
+            } else {
+                None
+            },
+            lon: if ua8[73] & 64 != 0 {
+                Some(s32[3] as f64 / 1e6)
+            } else {
+                None
+            },
+            alt_baro: if ua8[73] & 16 != 0 {
+                Some(s16[8] as f64 * 25.0)
+            } else {
+                None
+            },
+            alt_geom: if ua8[73] & 32 != 0 {
+                Some(s16[9] as f64 * 25.0)
+            } else {
+                None
+            },
+            baro_rate: if ua8[75] & 1 != 0 {
+                Some(s16[10] as f64 * 8.0)
+            } else {
+                None
+            },
+            geom_rate: if ua8[75] & 2 != 0 {
+                Some(s16[11] as f64 * 8.0)
+            } else {
+                None
+            },
+            nav_altitude_mcp: if ua8[76] & 64 != 0 {
+                Some(ua16[12] * 4)
+            } else {
+                None
+            },
+            nav_altitude_fms: if ua8[76] & 128 != 0 {
+                Some(ua16[13] * 4)
+            } else {
+                None
+            },
+            nav_qnh: if ua8[76] & 32 != 0 {
+                Some(s16[14] as f64 / 10.0)
+            } else {
+                None
+            },
+            nav_heading: if ua8[77] & 2 != 0 {
+                Some(s16[15] as f64 / 90.0)
+            } else {
+                None
+            },
+            squawk: if ua8[76] & 4 != 0 { Some(squawk) } else { None },
+            gs: if ua8[73] & 128 != 0 {
+                Some(s16[17] as f64 / 10.0)
+            } else {
+                None
+            },
+            mach: if ua8[74] & 4 != 0 {
+                Some(s16[18] as f64 / 1000.0)
+            } else {
+                None
+            },
+            roll: if ua8[74] & 32 != 0 {
+                Some(s16[19] as f64 / 100.0)
+            } else {
+                None
+            },
+            track: if ua8[74] & 8 != 0 {
+                Some(s16[20] as f64 / 90.0)
+            } else {
+                None
+            },
+            track_rate: if ua8[74] & 16 != 0 {
+                Some(s16[21] as f64 / 100.0)
+            } else {
+                None
+            },
+            mag_heading: if ua8[74] & 64 != 0 {
+                Some(s16[22] as f64 / 90.0)
+            } else {
+                None
+            },
+            true_heading: if ua8[74] & 128 != 0 {
+                Some(s16[23] as f64 / 90.0)
+            } else {
+                None
+            },
+            wd: if ua8[77] & 16 != 0 {
+                Some(s16[24])
+            } else {
+                None
+            },
+            ws: if ua8[77] & 16 != 0 {
+                Some(s16[25])
+            } else {
+                None
+            },
+            oat: if ua8[77] & 32 != 0 {
+                Some(s16[26])
+            } else {
+                None
+            },
+            tat: if ua8[77] & 32 != 0 {
+                Some(s16[27])
+            } else {
+                None
+            },
+            tas: if ua8[74] & 2 != 0 {
+                Some(ua16[28])
+            } else {
+                None
+            },
+            ias: if ua8[74] & 1 != 0 {
+                Some(ua16[29])
+            } else {
+                None
+            },
+            rc: ua16[30],
+            messages: ua16[31],
             category,
-            nic:                    ua8[65],
+            nic: ua8[65],
             nav_modes,
-            emergency:              if ua8[76] & 8 != 0 {Some(ua8[67] & 15)} else {None},
+            emergency: if ua8[76] & 8 != 0 {
+                Some(ua8[67] & 15)
+            } else {
+                None
+            },
             track_type,
-            airground:              ua8[68] & 15,
-            nav_altitude_src:       if ua8[77] & 1 != 0 {Some((ua8[68] & 240) >> 4)} else {None},
-            sil_type:               ua8[69] & 15,
-            adsb_version:           (ua8[69] & 240) >> 4,
-            adsr_version:           ua8[70] & 15,
-            tisb_version:           (ua8[70] & 240) >> 4,
-            nac_p:                  if ua8[75] & 32 != 0 {Some(ua8[71] & 15)} else {None},
-            nac_v:                  if ua8[75] & 64 != 0 {Some((ua8[71] & 240) >> 4)} else {None},
-            sil:                    if ua8[75] & 128 != 0 {Some(ua8[72] & 3)} else {None},
-            gva:                    if ua8[76] & 1 != 0 {Some((ua8[72] & 12) >> 2)} else {None},
-            sda:                    if ua8[76] & 2 != 0 {Some((ua8[72] & 48) >> 4)} else {None},
-            nic_a:                  if ua8[75] & 4 != 0 {Some((ua8[72] & 64) >> 6)} else {None},
-            nic_c:                  if ua8[75] & 8 != 0 {Some((ua8[72] & 128) >> 7)} else {None},
+            airground: ua8[68] & 15,
+            nav_altitude_src: if ua8[77] & 1 != 0 {
+                Some((ua8[68] & 240) >> 4)
+            } else {
+                None
+            },
+            sil_type: ua8[69] & 15,
+            adsb_version: (ua8[69] & 240) >> 4,
+            adsr_version: ua8[70] & 15,
+            tisb_version: (ua8[70] & 240) >> 4,
+            nac_p: if ua8[75] & 32 != 0 {
+                Some(ua8[71] & 15)
+            } else {
+                None
+            },
+            nac_v: if ua8[75] & 64 != 0 {
+                Some((ua8[71] & 240) >> 4)
+            } else {
+                None
+            },
+            sil: if ua8[75] & 128 != 0 {
+                Some(ua8[72] & 3)
+            } else {
+                None
+            },
+            gva: if ua8[76] & 1 != 0 {
+                Some((ua8[72] & 12) >> 2)
+            } else {
+                None
+            },
+            sda: if ua8[76] & 2 != 0 {
+                Some((ua8[72] & 48) >> 4)
+            } else {
+                None
+            },
+            nic_a: if ua8[75] & 4 != 0 {
+                Some((ua8[72] & 64) >> 6)
+            } else {
+                None
+            },
+            nic_c: if ua8[75] & 8 != 0 {
+                Some((ua8[72] & 128) >> 7)
+            } else {
+                None
+            },
             hex,
-            flight:                 if ua8[73] & 8 != 0 {Some(callsign.trim().to_owned())} else {None},
-            rssi:                   10.0 * (ua8[86] as f64*ua8[86] as f64/65025.0 + 1.125e-5).ln()/10f64.ln(),
-            db_flags:               ua8[87],
+            flight: if ua8[73] & 8 != 0 {
+                Some(callsign.trim().to_owned())
+            } else {
+                None
+            },
+            rssi: 10.0 * (ua8[86] as f64 * ua8[86] as f64 / 65025.0 + 1.125e-5).ln() / 10f64.ln(),
+            db_flags: ua8[87],
             aircraft_type,
             registration,
-            receiver_count:         ua8[104],
-            nic_baro:               if ua8[75] & 16 != 0 {Some(ua8[73] & 1)} else {None},
-            alert1:                 if ua8[77] & 8 != 0 {Some(ua8[73] & 2)} else {None},
-            spi:                    if ua8[76] & 16 != 0 {Some(ua8[73] & 4)} else {None},
+            receiver_count: ua8[104],
+            nic_baro: if ua8[75] & 16 != 0 {
+                Some(ua8[73] & 1)
+            } else {
+                None
+            },
+            alert1: if ua8[77] & 8 != 0 {
+                Some(ua8[73] & 2)
+            } else {
+                None
+            },
+            spi: if ua8[76] & 16 != 0 {
+                Some(ua8[73] & 4)
+            } else {
+                None
+            },
         }
     }
 }
@@ -218,7 +372,7 @@ pub struct BinCraftData {
     pub ac_count: u32,
     pub global_index: u32,
     pub limits: BoundingLimits,
-    pub aircraft: Vec<FlightData>
+    pub aircraft: Vec<FlightData>,
 }
 
 impl BinCraftData {
@@ -231,16 +385,13 @@ impl BinCraftData {
         let global_index = vals[4];
 
         let limits = BoundingLimits::from_bytes(&bytes[20..]);
-        
+
         // Aircraft list
         let mut aircraft = Vec::new();
         let mut offset = stride;
 
-
         while offset < bytes.len() {
-            aircraft.push(
-                FlightData::from_bytes(&bytes[offset..], stride)
-            );
+            aircraft.push(FlightData::from_bytes(&bytes[offset..], stride));
 
             offset += stride;
         }

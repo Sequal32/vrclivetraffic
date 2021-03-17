@@ -1,6 +1,6 @@
 use attohttpc;
 use regex;
-use serde_json::{Value, Map};
+use serde_json::{Map, Value};
 
 use crate::error::Error;
 use crate::request::Request;
@@ -15,25 +15,48 @@ pub struct FlightPlan {
     pub speed: u64,
     pub altitude: u64,
     pub route: String,
-
 }
 
 fn get_origin(flight_data: &Map<String, Value>) -> Option<String> {
-    Some(flight_data.get("origin")?.as_object()?.get("icao")?.as_str().unwrap_or_default().to_string())
+    Some(
+        flight_data
+            .get("origin")?
+            .as_object()?
+            .get("icao")?
+            .as_str()
+            .unwrap_or_default()
+            .to_string(),
+    )
 }
 
 fn get_destination(flight_data: &Map<String, Value>) -> Option<String> {
-    Some(flight_data.get("destination")?.as_object()?.get("icao")?.as_str().unwrap_or_default().to_string())
+    Some(
+        flight_data
+            .get("destination")?
+            .as_object()?
+            .get("icao")?
+            .as_str()
+            .unwrap_or_default()
+            .to_string(),
+    )
 }
 
 fn get_equipment(flight_data: &Map<String, Value>) -> Option<String> {
-    Some(flight_data.get("aircraft")?.as_object()?.get("type")?.as_str().unwrap_or_default().to_string())
+    Some(
+        flight_data
+            .get("aircraft")?
+            .as_object()?
+            .get("type")?
+            .as_str()
+            .unwrap_or_default()
+            .to_string(),
+    )
 }
 
 fn get_flightplan_from_json(data: &Value) -> Option<FlightPlan> {
     let flights = data.as_object()?.get("flights")?.as_object()?;
     let (_, first_flight) = flights.iter().next()?;
-    
+
     let flight_data = first_flight.as_object()?;
 
     let origin = get_origin(flight_data).unwrap_or_default();
@@ -50,7 +73,9 @@ fn get_flightplan_from_json(data: &Value) -> Option<FlightPlan> {
         speed = flight_plan.get("speed")?.as_u64().unwrap_or(0);
         altitude = flight_plan.get("altitude")?.as_u64().unwrap_or(0);
         route = flight_plan.get("route")?.as_str().unwrap_or("").to_string();
-        if altitude < 1000 {altitude = altitude * 100}
+        if altitude < 1000 {
+            altitude = altitude * 100
+        }
     };
 
     return Some(FlightPlan {
@@ -59,31 +84,31 @@ fn get_flightplan_from_json(data: &Value) -> Option<FlightPlan> {
         destination,
         speed,
         altitude,
-        route
+        route,
     });
 }
 
 #[derive(Debug)]
 struct FlightPlanRequest {
     id: String,
-    callsign: String
+    callsign: String,
 }
 
 #[derive(Debug)]
 pub struct FlightPlanResult {
     pub id: String,
     pub callsign: String,
-    pub fp: FlightPlan
+    pub fp: FlightPlan,
 }
 
 pub struct FlightAware {
-    flightplans: Request<Result<FlightPlanResult, Error>, FlightPlanRequest>
+    flightplans: Request<Result<FlightPlanResult, Error>, FlightPlanRequest>,
 }
 
 impl FlightAware {
     pub fn new() -> Self {
         Self {
-            flightplans: Request::new(5)
+            flightplans: Request::new(5),
         }
     }
 
@@ -96,7 +121,7 @@ impl FlightAware {
                 .send()?
                 .error_for_status()?
                 .text()?;
-            
+
             let mut data: &str = "";
             // Parse json from html
             for cap in exp.captures(&text) {
@@ -108,16 +133,20 @@ impl FlightAware {
             let data: Value = serde_json::from_str(data)?;
 
             match get_flightplan_from_json(&data) {
-                Some(fp) => Ok(FlightPlanResult {callsign: job.callsign, id: job.id, fp: fp}),
-                None => Err(Error::NotFound)
+                Some(fp) => Ok(FlightPlanResult {
+                    callsign: job.callsign,
+                    id: job.id,
+                    fp: fp,
+                }),
+                None => Err(Error::NotFound),
             }
         });
     }
 
     pub fn request_flightplan(&self, id: &str, callsign: &str) {
         self.flightplans.give_job(FlightPlanRequest {
-            id: id.to_string(), 
-            callsign: callsign.to_string()
+            id: id.to_string(),
+            callsign: callsign.to_string(),
         });
     }
 
