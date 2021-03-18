@@ -42,23 +42,30 @@ pub struct Bounds {
     pub lon2: f32,
 }
 
-#[derive(Debug, Default, Clone)]
-pub struct MinimalAircraftData {
-    pub squawk: String,
-    pub callsign: String,
-    pub is_on_ground: bool,
-    pub latitude: f32,
-    pub longitude: f32,
-    pub heading: u32,
-    pub ground_speed: u32,
-    pub timestamp: u64,
-    pub altitude: i32,
-    pub model: String,
-    pub provider: String,
-    pub hex: String,
+pub trait AircraftData {
+    fn squawk(&self) -> &str;
+    fn callsign(&self) -> &str;
+    fn is_on_ground(&self) -> bool;
+    fn latitude(&self) -> f32;
+    fn longitude(&self) -> f32;
+    fn heading(&self) -> u32;
+    fn ground_speed(&self) -> u32;
+    fn timestamp(&self) -> u64;
+    fn altitude(&self) -> i32;
+    fn model(&self) -> &str;
+    fn hex(&self) -> &str;
+}
+
+pub trait FromProvider {
+    fn provider(&self) -> &str;
 }
 
 pub trait AircraftProvider {
-    fn get_aircraft(&mut self) -> Result<HashMap<String, MinimalAircraftData>, Error>;
+    fn get_aircraft(&mut self) -> Result<AircraftMap, Error>;
     fn get_name(&self) -> &str;
 }
+
+pub trait ProvidedAircraftData: AircraftData + FromProvider {}
+
+pub type BoxedData = Box<dyn ProvidedAircraftData>;
+pub type AircraftMap = HashMap<String, BoxedData>;

@@ -2,10 +2,10 @@ mod bincraft;
 mod util;
 pub use bincraft::*;
 
-use crate::{
-    error::Error,
-    util::{AircraftProvider, Bounds, MinimalAircraftData},
+use crate::util::{
+    AircraftData, AircraftMap, AircraftProvider, Bounds, BoxedData, ProvidedAircraftData,
 };
+use crate::{error::Error, util::FromProvider};
 use attohttpc::{body::Empty, PreparedRequest, Session};
 use std::collections::{HashMap, HashSet};
 
@@ -22,27 +22,6 @@ fn get_global_index(lat: f32, lon: f32) -> u16 {
     let lat_mutliplier = (360.0 / GLOBE_INDEX_GRID + 1.0).floor();
 
     return (i * lat_mutliplier + j + 1000.0) as u16;
-}
-
-fn get_minimal_from_data(
-    data: FlightData,
-    provider: String,
-    time: u64,
-) -> Option<MinimalAircraftData> {
-    Some(MinimalAircraftData {
-        squawk: data.squawk?,
-        callsign: data.flight?,
-        is_on_ground: data.airground == 1,
-        latitude: data.lat? as f32,
-        longitude: data.lon? as f32,
-        heading: data.track? as u32,
-        ground_speed: data.gs? as u32,
-        timestamp: time,
-        altitude: data.alt_baro? as i32,
-        model: data.aircraft_type,
-        hex: data.hex,
-        provider,
-    })
 }
 
 pub struct AdsbExchange {
@@ -153,7 +132,7 @@ impl AdsbExchange {
 }
 
 impl AircraftProvider for AdsbExchange {
-    fn get_aircraft(&mut self) -> Result<HashMap<String, MinimalAircraftData>, Error> {
+    fn get_aircraft(&mut self) -> Result<AircraftMap, Error> {
         let mut return_data = HashMap::new();
 
         for index in self.global_indexes.iter() {
@@ -165,14 +144,7 @@ impl AircraftProvider for AdsbExchange {
 
             for aircraft in parsed_data.aircraft {
                 let ident = aircraft.hex.clone();
-
-                if let Some(data) = get_minimal_from_data(
-                    aircraft,
-                    self.get_name().to_string(),
-                    parsed_data.time as u64,
-                ) {
-                    return_data.insert(ident, data);
-                }
+                return_data.insert(ident, Box::new(aircraft) as BoxedData);
             }
         }
 
@@ -183,3 +155,57 @@ impl AircraftProvider for AdsbExchange {
         "ADSBExchange"
     }
 }
+
+impl AircraftData for ADSBExData {
+    fn squawk(&self) -> &str {
+        self.squawk.as_ref().map(|x| x as &str).unwrap_or("")
+    }
+
+    fn callsign(&self) -> &str {
+        self.flight.as_ref().map(|x| x as &str).unwrap_or("")
+    }
+
+    fn is_on_ground(&self) -> bool {
+        self.airground == 1
+    }
+
+    fn latitude(&self) -> f32 {
+        self.lat.unwrap_or(0.0) as f32
+    }
+
+    fn longitude(&self) -> f32 {
+        self.lon.unwrap_or(0.0) as f32
+    }
+
+    fn heading(&self) -> u32 {
+        self.track.map(|x| x as u32).unwrap_or(0)
+    }
+
+    fn ground_speed(&self) -> u32 {
+        self.gs.map(|x| x as u32).unwrap_or(0)
+    }
+
+    fn timestamp(&self) -> u64 {
+        self.time as u64
+    }
+
+    fn altitude(&self) -> i32 {
+        self.alt_baro.map(|x| x as i32).unwrap_or(0)
+    }
+
+    fn model(&self) -> &str {
+        &self.aircraft_type
+    }
+
+    fn hex(&self) -> &str {
+        &self.hex
+    }
+}
+
+impl FromProvider for ADSBExData {
+    fn provider(&self) -> &str {
+        "ADSBExchange"
+    }
+}
+
+impl ProvidedAircraftData for ADSBExData {}

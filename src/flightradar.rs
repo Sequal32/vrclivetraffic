@@ -1,37 +1,12 @@
-use crate::util::Bounds;
-use crate::{
-    error::Error,
-    util::{AircraftProvider, MinimalAircraftData},
-};
+use crate::util::{AircraftData, AircraftMap, AircraftProvider, Bounds, ProvidedAircraftData};
+use crate::{error::Error, util::FromProvider};
+
 use attohttpc;
 use serde::Deserialize;
 use serde_json::{self, Value};
 use std::collections::HashMap;
 
 const ENDPOINT: &str = "https://data-live.flightradar24.com/zones/fcgi/feed.js?faa=1&mlat=1&flarm=1&adsb=1&gnd=1&air=1&vehicles=1&estimated=1&gliders=1&stats=0&maxage=14400";
-
-#[derive(Deserialize, Debug, Default, Clone)]
-pub struct AircraftData {
-    pub mode_s_code: String,
-    pub latitude: f32,
-    pub longitude: f32,
-    pub bearing: u32,
-    pub altitude: i32,
-    pub speed: u32,
-    pub squawk_code: String,
-    pub radar: String,
-    pub model: String,
-    pub registration: String,
-    pub timestamp: u64,
-    pub origin: String,
-    pub destination: String,
-    pub flight: String,
-    is_on_ground: u8,
-    pub rate_of_climb: i32,
-    pub callsign: String,
-    is_glider: u8,
-    pub airline: String,
-}
 
 pub struct FlightRadar {
     base_url: String,
@@ -49,7 +24,7 @@ impl FlightRadar {
 }
 
 impl AircraftProvider for FlightRadar {
-    fn get_aircraft(&mut self) -> Result<HashMap<String, MinimalAircraftData>, Error> {
+    fn get_aircraft(&mut self) -> Result<AircraftMap, Error> {
         let response = attohttpc::get(&self.base_url).send()?.error_for_status()?;
 
         let mut return_data = HashMap::new();
@@ -63,24 +38,10 @@ impl AircraftProvider for FlightRadar {
                 continue;
             }
 
-            let data: AircraftData = serde_json::from_value(value.clone()).unwrap();
-
+            let data: FRData = serde_json::from_value(value.clone()).unwrap();
             return_data.insert(
                 index.clone(),
-                MinimalAircraftData {
-                    squawk: data.squawk_code,
-                    callsign: data.callsign,
-                    is_on_ground: data.is_on_ground == 1,
-                    latitude: data.latitude,
-                    longitude: data.longitude,
-                    heading: data.bearing,
-                    ground_speed: data.speed,
-                    timestamp: data.timestamp,
-                    altitude: data.altitude,
-                    model: data.model,
-                    provider: self.get_name().to_string(),
-                    hex: data.mode_s_code,
-                },
+                Box::new(data) as Box<dyn ProvidedAircraftData>,
             );
         }
 
@@ -91,3 +52,82 @@ impl AircraftProvider for FlightRadar {
         "FlightRadar24"
     }
 }
+
+#[derive(Deserialize, Debug, Default, Clone)]
+struct FRData {
+    mode_s_code: String,
+    latitude: f32,
+    longitude: f32,
+    bearing: u32,
+    altitude: i32,
+    speed: u32,
+    squawk_code: String,
+    radar: String,
+    model: String,
+    registration: String,
+    timestamp: u64,
+    origin: String,
+    destination: String,
+    flight: String,
+    is_on_ground: u8,
+    rate_of_climb: i32,
+    callsign: String,
+    is_glider: u8,
+    airline: String,
+    #[serde(default)]
+    provider: String,
+}
+
+impl AircraftData for FRData {
+    fn squawk(&self) -> &str {
+        &self.squawk_code
+    }
+
+    fn callsign(&self) -> &str {
+        &self.callsign
+    }
+
+    fn is_on_ground(&self) -> bool {
+        self.is_on_ground == 0
+    }
+
+    fn latitude(&self) -> f32 {
+        self.latitude
+    }
+
+    fn longitude(&self) -> f32 {
+        self.longitude
+    }
+
+    fn heading(&self) -> u32 {
+        self.bearing
+    }
+
+    fn ground_speed(&self) -> u32 {
+        self.speed
+    }
+
+    fn timestamp(&self) -> u64 {
+        self.timestamp
+    }
+
+    fn altitude(&self) -> i32 {
+        self.altitude
+    }
+
+    fn model(&self) -> &str {
+        &self.model
+    }
+
+    fn hex(&self) -> &str {
+        &self.mode_s_code
+    }
+}
+
+impl FromProvider for FRData {
+    fn provider(&self) -> &str {
+        "FlightRadar24"
+    }
+}
+
+impl ProvidedAircraftData for FRData {}

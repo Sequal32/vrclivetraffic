@@ -53,7 +53,7 @@ impl BoundingLimits {
 }
 
 #[derive(Debug)]
-pub struct FlightData {
+pub struct ADSBExData {
     pub hex: String,
     pub last_pos: Option<u16>,
     pub last_seen: u16,
@@ -127,10 +127,11 @@ pub struct FlightData {
     pub nic_baro: Option<u8>,
     pub alert1: Option<u8>,
     pub spi: Option<u8>,
+    pub time: f64,
 }
 
-impl FlightData {
-    pub fn from_bytes(bytes: &[u8], stride: usize) -> Self {
+impl ADSBExData {
+    pub fn from_bytes(bytes: &[u8], stride: usize, time: f64) -> Self {
         // https://github.com/wiedehopf/tar1090/blob/a74ea50524123fd90c9ba6da351b3f7e1385b60d/html/formatter.js#L343
         let s32 = fill_buf_i32(bytes, stride / 4);
         let ua16 = fill_buf_u16(bytes, stride / 2);
@@ -364,6 +365,7 @@ impl FlightData {
             } else {
                 None
             },
+            time,
         }
     }
 }
@@ -374,7 +376,7 @@ pub struct BinCraftData {
     pub ac_count: u32,
     pub global_index: u32,
     pub limits: BoundingLimits,
-    pub aircraft: Vec<FlightData>,
+    pub aircraft: Vec<ADSBExData>,
 }
 
 impl BinCraftData {
@@ -393,7 +395,7 @@ impl BinCraftData {
         let mut offset = stride;
 
         while offset < bytes.len() {
-            aircraft.push(FlightData::from_bytes(&bytes[offset..], stride));
+            aircraft.push(ADSBExData::from_bytes(&bytes[offset..], stride, time));
 
             offset += stride;
         }

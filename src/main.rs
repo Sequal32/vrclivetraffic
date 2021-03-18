@@ -13,22 +13,19 @@ use airports::Airports;
 use flightaware::FlightPlan;
 use fsdparser::{ClientQueryPayload, PacketTypes, Parser};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    fmt::Display,
-    fs::File,
-    io::Read,
-    io::Write,
-    net::TcpListener,
-    time::Instant,
-};
+use std::collections::{hash_map::Entry, HashMap};
+use std::fmt::Display;
+use std::fs::File;
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::time::Instant;
 use tracker::{TrackData, Tracker};
-use util::MinimalAircraftData;
+use util::BoxedData;
 
 fn build_aircraft_string(data: &mut TrackData, should_interpolate: bool) -> String {
-    let ac_data = &data.data;
+    let ac_data = &data.ac_data;
     // Calculate PBH
-    let h = ac_data.heading as f64 / 360.0 * 1024.0;
+    let h = ac_data.heading() as f64 / 360.0 * 1024.0;
     let pbh: i32 = 0 << 22 | 0 << 12 | (h as i32) << 2;
 
     let pos = if should_interpolate {
@@ -39,39 +36,39 @@ fn build_aircraft_string(data: &mut TrackData, should_interpolate: bool) -> Stri
 
     format!(
         "@N:{callsign}:{squawk}:1:{lat}:{lon}:{alt}:{speed}:{pbh}:0\r\n",
-        callsign = ac_data.callsign,
-        squawk = ac_data.squawk,
+        callsign = ac_data.callsign(),
+        squawk = ac_data.squawk(),
         lat = pos.lat,
         lon = pos.lon,
-        alt = ac_data.altitude,
-        speed = ac_data.ground_speed,
+        alt = ac_data.altitude(),
+        speed = ac_data.ground_speed(),
         pbh = pbh
     )
 }
 
-fn get_remarks(minimal: &MinimalAircraftData) -> String {
-    format!("Provider {}, Hex {}", minimal.provider, minimal.hex)
+fn get_remarks(ac_data: &BoxedData) -> String {
+    format!("Provider {}, Hex {}", ac_data.provider(), ac_data.hex())
 }
 
-fn build_flightplan_string(fp: &FlightPlan, minimal: &MinimalAircraftData) -> String {
+fn build_flightplan_string(fp: &FlightPlan, ac_data: &BoxedData) -> String {
     format!("$FP{callsign}::I:{equipment}:{speed}:{origin}:0:0:{altitude}:{destination}:0:0:0:0::/v/ {remarks}:{route}\r\n",
-        callsign = minimal.callsign,
+        callsign = ac_data.callsign(),
         equipment = fp.equipment,
         speed = fp.speed,
         origin = fp.origin,
         altitude = fp.altitude,
         destination = fp.destination,
         route = fp.route,
-        remarks = get_remarks(minimal)
+        remarks = get_remarks(ac_data)
     )
 }
 
-fn build_flightplan_string_from_minimal(minimal: &MinimalAircraftData) -> String {
+fn build_flightplan_string_from_minimal(ac_data: &BoxedData) -> String {
     format!(
         "$FP{callsign}::V:{equipment}:0::0:0:0::0:0:0:0::/v/ {remarks}:\r\n",
-        callsign = minimal.callsign,
-        equipment = minimal.model,
-        remarks = get_remarks(minimal)
+        callsign = ac_data.callsign(),
+        equipment = ac_data.model(),
+        remarks = get_remarks(ac_data)
     )
 }
 
@@ -231,13 +228,8 @@ fn main() {
                 };
                 // Update position either in place or interpolated
                 if should_update_position {
-                    let should_interpolate = !aircraft.data.is_on_ground
-                        && aircraft
-                            .at_last_position_update
-                            .unwrap()
-                            .elapsed()
-                            .as_secs()
-                            < 20;
+                    let should_interpolate = !aircraft.ac_data.is_on_ground()
+                        && aircraft.at_last_position_update.elapsed().as_secs() < 20;
                     if let Err(_) =
                         stream.write(build_aircraft_string(aircraft, should_interpolate).as_bytes())
                     {
@@ -247,7 +239,9 @@ fn main() {
                     // Give the aircraft an initial flight plan
                     if !tracked.did_init_set && !aircraft.fp.is_some() {
                         stream
-                            .write(build_flightplan_string_from_minimal(&aircraft.data).as_bytes())
+                            .write(
+                                build_flightplan_string_from_minimal(&aircraft.ac_data).as_bytes(),
+                            )
                             .ok();
                         tracked.did_init_set = true;
                     }
@@ -258,19 +252,19 @@ fn main() {
                             .write(
                                 build_flightplan_string(
                                     aircraft.fp.as_ref().unwrap(),
-                                    &aircraft.data,
+                                    &aircraft.ac_data,
                                 )
                                 .as_bytes(),
                             )
                             .ok();
                         // Not squawking anything... will have duplicates if we assign an empty code
-                        if aircraft.data.squawk != "0000" {
+                        if aircraft.ac_data.squawk() != "0000" {
                             stream
                                 .write(
                                     build_beacon_code_string(
                                         &current_callsign,
-                                        &aircraft.data.callsign,
-                                        &aircraft.data.squawk,
+                                        &aircraft.ac_data.callsign(),
+                                        &aircraft.ac_data.squawk(),
                                     )
                                     .as_bytes(),
                                 )
@@ -333,7 +327,7 @@ fn main() {
                                         if let Some(fp) = &data.fp {
                                             stream
                                                 .write(
-                                                    build_flightplan_string(fp, &data.data)
+                                                    build_flightplan_string(fp, &data.ac_data)
                                                         .as_bytes(),
                                                 )
                                                 .ok();

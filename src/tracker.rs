@@ -7,11 +7,10 @@ use std::{
 use regex::Regex;
 
 use crate::flightaware::{FlightAware, FlightPlan};
-use crate::{
-    adsbexchange::AdsbExchange,
-    util::{AircraftProvider, Bounds, MinimalAircraftData},
-};
-use crate::{flightradar::FlightRadar, interpolate::InterpolatePosition};
+use crate::flightradar::FlightRadar;
+use crate::interpolate::InterpolatePosition;
+use crate::util::{AircraftProvider, Bounds};
+use crate::{adsbexchange::AdsbExchange, util::BoxedData};
 
 const POLL_RATE: u64 = 3;
 
@@ -19,7 +18,7 @@ pub struct Tracker {
     providers: Vec<Box<dyn AircraftProvider>>,
     faware: FlightAware,
 
-    buffer: VecDeque<Vec<(String, MinimalAircraftData)>>,
+    buffer: VecDeque<Vec<(String, BoxedData)>>,
     is_buffering: bool,
     tracking: HashMap<String, TrackData>,
     callsign_map: HashMap<String, String>,
@@ -27,6 +26,8 @@ pub struct Tracker {
 
     floor: i32,
     ceiling: i32,
+
+    airline_regex: Regex,
 }
 
 impl Tracker {
@@ -46,6 +47,8 @@ impl Tracker {
 
             floor,
             ceiling,
+
+            airline_regex: Regex::new(r"[A-z]{3}\d+").unwrap(),
         }
     }
 
@@ -54,24 +57,21 @@ impl Tracker {
     }
 
     fn try_update_flightplan(&mut self, id: &String) {
-        let data = self.tracking.get_mut(id);
-        if data.is_none() {
-            return;
-        }
-
-        let data = data.unwrap();
+        let data = match self.tracking.get_mut(id) {
+            Some(d) => d,
+            None => return,
+        };
+        // Already updated flight plan
         if data.fp.is_some() || data.fp_did_try_update {
             return;
         }
-
+        // FP on request
         data.fp_did_try_update = true;
 
         // Only update airliners
-        if Regex::new(r"[A-z]{3}\d+")
-            .unwrap()
-            .is_match(&data.data.callsign)
-        {
-            self.faware.request_flightplan(id, &data.data.callsign);
+        let callsign = data.ac_data.callsign();
+        if self.airline_regex.is_match(callsign) {
+            self.faware.request_flightplan(id, callsign);
         }
     }
 
@@ -81,51 +81,28 @@ impl Tracker {
         }
     }
 
-    fn update_position(&mut self, id: &String, new_data: &MinimalAircraftData) {
-        let prev_data = self.tracking.get_mut(id);
-        if prev_data.is_none() {
-            return;
-        }
-        let prev_data = prev_data.unwrap();
-
-        if new_data.timestamp <= prev_data.last_position_update {
-            return;
-        }
-
-        prev_data.data = new_data.clone();
-        prev_data.position = InterpolatePosition::new(
-            new_data.latitude,
-            new_data.longitude,
-            new_data.heading,
-            new_data.ground_speed,
-        );
-        prev_data.last_position_update = new_data.timestamp;
-        prev_data.at_last_position_update = Some(Instant::now());
-    }
-
-    fn check_and_create_new_aircraft(&mut self, id: &String, data: &MinimalAircraftData) -> bool {
+    /// Returns the original data if not passed in in an Option
+    fn check_and_create_new_aircraft(&mut self, id: &String, data: BoxedData) -> Option<BoxedData> {
         // if aircraft was created
         if self.tracking.get(id).is_none() {
             // Callsign doesn't already exist
-            if self.callsign_map.contains_key(&data.callsign) {
-                return false;
+            if self.callsign_map.contains_key(data.callsign()) {
+                return Some(data);
             }
             // Callsign is invalid (FlightRadar24 sometimes puts the aircraft type as the callsign...)
-            if data.callsign.len() <= 4 {
-                return false;
+            if data.callsign().len() <= 4 {
+                return Some(data);
             }
-            self.callsign_map.insert(data.callsign.clone(), id.clone());
 
-            self.tracking.insert(
-                id.clone(),
-                TrackData {
-                    data: data.clone(),
-                    id: id.clone(),
-                    ..Default::default()
-                },
-            );
+            self.callsign_map
+                .insert(data.callsign().to_string(), id.clone());
+
+            self.tracking
+                .insert(id.clone(), TrackData::new(id.clone(), data));
+
+            return None;
         }
-        return true;
+        return Some(data);
     }
 
     // Removes aircraft that have been lost on radar
@@ -140,11 +117,11 @@ impl Tracker {
 
         for removing in to_remove {
             let data = self.tracking.remove(&removing).unwrap();
-            self.callsign_map.remove(&data.data.callsign);
+            self.callsign_map.remove(data.ac_data.callsign());
         }
     }
 
-    fn get_next_aircraft_update(&mut self) -> Option<Vec<(String, MinimalAircraftData)>> {
+    fn get_next_aircraft_update(&mut self) -> Option<Vec<(String, BoxedData)>> {
         // A vector is used here instead as we want to keep duplicates in case one of the provider's data fails to validate
         let mut all_data = Vec::new();
 
@@ -172,6 +149,26 @@ impl Tracker {
         }
     }
 
+    fn update_position(&mut self, id: &str, new_ac_data: &BoxedData) {
+        let current_data = match self.tracking.get_mut(id) {
+            Some(d) => d,
+            None => return,
+        };
+
+        if new_ac_data.timestamp() <= current_data.last_position_update {
+            return;
+        }
+
+        current_data.position = InterpolatePosition::new(
+            new_ac_data.latitude(),
+            new_ac_data.longitude(),
+            new_ac_data.heading(),
+            new_ac_data.ground_speed(),
+        );
+        current_data.last_position_update = new_ac_data.timestamp();
+        current_data.at_last_position_update = Instant::now();
+    }
+
     fn update_aircraft(&mut self) {
         let aircraft = match self.get_next_aircraft_update() {
             Some(a) => a,
@@ -186,18 +183,17 @@ impl Tracker {
                 continue;
             }
             // Invalid callsigns/callsign not received
-            if aircraft.callsign.trim() == "" {
+            if aircraft.callsign().trim() == "" {
                 continue;
             }
-            if aircraft.altitude < self.floor || aircraft.altitude > self.ceiling {
+            if aircraft.altitude() < self.floor || aircraft.altitude() > self.ceiling {
                 continue;
             }
-            if !self.check_and_create_new_aircraft(&id, &aircraft) {
-                continue;
-            } // can't use aircrat
 
-            self.update_position(&id, &aircraft);
-            self.try_update_flightplan(&id);
+            if let Some(new_data) = self.check_and_create_new_aircraft(&id, aircraft) {
+                self.update_position(&id, &new_data);
+                self.try_update_flightplan(&id);
+            }
 
             processed_ids.insert(id);
         }
@@ -251,7 +247,6 @@ impl Tracker {
     }
 }
 
-#[derive(Default)]
 pub struct TrackData {
     pub id: String,
     // Flight Plan
@@ -259,8 +254,22 @@ pub struct TrackData {
     pub fp: Option<FlightPlan>,
     // Position
     last_position_update: u64,
-    pub at_last_position_update: Option<Instant>,
+    pub at_last_position_update: Instant,
     pub position: InterpolatePosition,
     // Meta data
-    pub data: MinimalAircraftData,
+    pub ac_data: BoxedData,
+}
+
+impl TrackData {
+    pub fn new(id: String, ac_data: BoxedData) -> Self {
+        Self {
+            ac_data,
+            id,
+            fp: None,
+            fp_did_try_update: false,
+            last_position_update: 0,
+            at_last_position_update: Instant::now(),
+            position: InterpolatePosition::default(),
+        }
+    }
 }
