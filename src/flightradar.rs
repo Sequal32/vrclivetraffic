@@ -1,24 +1,27 @@
+use crate::airports::Airports;
 use crate::util::{AircraftData, AircraftMap, AircraftProvider, Bounds, ProvidedAircraftData};
 use crate::{error::Error, util::FromProvider};
 
 use attohttpc;
 use serde::Deserialize;
 use serde_json::{self, Value};
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
 const ENDPOINT: &str = "https://data-live.flightradar24.com/zones/fcgi/feed.js?faa=1&mlat=1&flarm=1&adsb=1&gnd=1&air=1&vehicles=1&estimated=1&gliders=1&stats=0&maxage=14400";
 
 pub struct FlightRadar {
     base_url: String,
+    airports: Rc<Airports>,
 }
 
 impl FlightRadar {
-    pub fn new(radar_loc: &Bounds) -> Self {
+    pub fn new(radar_loc: &Bounds, airports: Rc<Airports>) -> Self {
         Self {
             base_url: format!(
                 "{}&bounds={:.2},{:.2},{:.2},{:.2}",
                 ENDPOINT, radar_loc.lat1, radar_loc.lat2, radar_loc.lon1, radar_loc.lon2
             ),
+            airports,
         }
     }
 }
@@ -32,15 +35,25 @@ impl AircraftProvider for FlightRadar {
         let data: Value = serde_json::from_str(&response.text()?)?;
 
         // Iterate through aircraft
-        for (index, value) in data.as_object().unwrap() {
+        for (_, value) in data.as_object().unwrap() {
             // Skip over stats data like numbers and objects
             if !value.is_array() {
                 continue;
             }
 
-            let data: FRData = serde_json::from_value(value.clone()).unwrap();
+            let mut data: FRData = serde_json::from_value(value.clone()).unwrap();
+
+            data.origin = self
+                .airports
+                .get_icao_from_iata(&data.origin)
+                .map_or(String::new(), |x| x.clone());
+            data.destination = self
+                .airports
+                .get_icao_from_iata(&data.destination)
+                .map_or(String::new(), |x| x.clone());
+
             return_data.insert(
-                index.clone(),
+                data.mode_s_code.clone(),
                 Box::new(data) as Box<dyn ProvidedAircraftData>,
             );
         }
@@ -121,6 +134,14 @@ impl AircraftData for FRData {
 
     fn hex(&self) -> &str {
         &self.mode_s_code
+    }
+
+    fn origin(&self) -> &str {
+        &self.origin
+    }
+
+    fn destination(&self) -> &str {
+        &self.destination
     }
 }
 

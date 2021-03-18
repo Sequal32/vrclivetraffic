@@ -1,11 +1,10 @@
-use std::{
-    collections::HashMap,
-    collections::{HashSet, VecDeque},
-    time::Instant,
-};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::rc::Rc;
+use std::time::Instant;
 
 use regex::Regex;
 
+use crate::airports::Airports;
 use crate::flightaware::{FlightAware, FlightPlan};
 use crate::flightradar::FlightRadar;
 use crate::interpolate::InterpolatePosition;
@@ -31,10 +30,10 @@ pub struct Tracker {
 }
 
 impl Tracker {
-    pub fn new(radar_loc: &Bounds, floor: i32, ceiling: i32) -> Self {
+    pub fn new(radar_loc: &Bounds, airports: Rc<Airports>, floor: i32, ceiling: i32) -> Self {
         Self {
             providers: vec![
-                Box::new(FlightRadar::new(radar_loc)),
+                Box::new(FlightRadar::new(radar_loc, airports)),
                 Box::new(AdsbExchange::new(radar_loc)),
             ],
             faware: FlightAware::new(),
@@ -83,6 +82,7 @@ impl Tracker {
 
     /// Returns the original data if not passed in in an Option
     fn check_and_create_new_aircraft(&mut self, id: &String, data: BoxedData) -> Option<BoxedData> {
+        println!("{} {} {}", id, data.callsign(), data.provider());
         // if aircraft was created
         if self.tracking.get(id).is_none() {
             // Callsign doesn't already exist

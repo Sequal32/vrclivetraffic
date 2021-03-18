@@ -39,7 +39,7 @@ impl AdsbExchange {
 
         let x1 = radar_loc.lon1;
         let x2 = radar_loc.lon2;
-        let y1 = radar_loc.lat2;
+        let _y1 = radar_loc.lat2;
         let y2 = radar_loc.lat1;
 
         let mut x3 = if x1 < x2 { x2 } else { 199.0 };

@@ -23,19 +23,22 @@ pub struct AirportData {
 
 pub struct Airports {
     db: HashMap<String, AirportData>,
+    iata_icao_map: HashMap<String, String>,
 }
 
 impl Airports {
     pub fn new(filename: &str) -> Result<Self, csv::Error> {
         let mut reader = csv::Reader::from_path(filename)?;
         let mut db = HashMap::new();
+        let mut iata_icao_map = HashMap::new();
 
         for record in reader.deserialize() {
             let record: AirportData = record?;
+            iata_icao_map.insert(record.iata.clone(), record.icao.clone());
             db.insert(record.icao.clone(), record);
         }
 
-        Ok(Self { db })
+        Ok(Self { db, iata_icao_map })
     }
 
     pub fn get_lat_lon(&self, icao: &String) -> Option<LatLon> {
@@ -59,5 +62,9 @@ impl Airports {
             lat2: center.lat - offset.lat, // Left
             lon2: center.lon + offset.lon, // Top
         })
+    }
+
+    pub fn get_icao_from_iata(&self, iata: &str) -> Option<&String> {
+        self.iata_icao_map.get(iata)
     }
 }

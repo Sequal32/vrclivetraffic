@@ -13,14 +13,20 @@ use airports::Airports;
 use flightaware::FlightPlan;
 use fsdparser::{ClientQueryPayload, PacketTypes, Parser};
 use serde::{Deserialize, Serialize};
-use std::collections::{hash_map::Entry, HashMap};
 use std::fmt::Display;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::time::Instant;
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    rc::Rc,
+};
 use tracker::{TrackData, Tracker};
 use util::BoxedData;
+
+const CONFIG_FILENAME: &str = "config.json";
+const AIRPORT_DATA_FILENAME: &str = "airports.dat";
 
 fn build_aircraft_string(data: &mut TrackData, should_interpolate: bool) -> String {
     let ac_data = &data.ac_data;
@@ -63,11 +69,13 @@ fn build_flightplan_string(fp: &FlightPlan, ac_data: &BoxedData) -> String {
     )
 }
 
-fn build_flightplan_string_from_minimal(ac_data: &BoxedData) -> String {
+fn build_init_flightplan_string(ac_data: &BoxedData) -> String {
     format!(
-        "$FP{callsign}::V:{equipment}:0::0:0:0::0:0:0:0::/v/ {remarks}:\r\n",
+        "$FP{callsign}::V:{equipment}:0:{origin}:0:0:0:{destination}:0:0:0:0::/v/ {remarks}:\r\n",
         callsign = ac_data.callsign(),
         equipment = ac_data.model(),
+        origin = ac_data.origin(),
+        destination = ac_data.destination(),
         remarks = get_remarks(ac_data)
     )
 }
@@ -120,9 +128,6 @@ impl Default for ConfigData {
     }
 }
 
-const CONFIG_FILENAME: &str = "config.json";
-const AIRPORT_DATA_FILENAME: &str = "airports.dat";
-
 fn read_config() -> Result<ConfigData, std::io::Error> {
     let file = File::open(CONFIG_FILENAME)?;
     Ok(serde_json::from_reader(file)?)
@@ -160,7 +165,7 @@ fn main() {
 
     // Load airports
     let airports = match Airports::new(AIRPORT_DATA_FILENAME) {
-        Ok(airports) => airports,
+        Ok(a) => Rc::new(a),
         Err(e) => {
             display_msg_and_exit(format!("Could not read airports.dat! Reason: {}", e));
             return;
@@ -197,7 +202,7 @@ fn main() {
         stream.set_nonblocking(true).ok();
 
         // Instantiate main tracker
-        let mut tracker = Tracker::new(&bounds, config.floor, config.ceiling);
+        let mut tracker = Tracker::new(&bounds, airports.clone(), config.floor, config.ceiling);
         // Start loops to listen for data
         if config.use_flightaware {
             tracker.run_faware();
@@ -239,9 +244,7 @@ fn main() {
                     // Give the aircraft an initial flight plan
                     if !tracked.did_init_set && !aircraft.fp.is_some() {
                         stream
-                            .write(
-                                build_flightplan_string_from_minimal(&aircraft.ac_data).as_bytes(),
-                            )
+                            .write(build_init_flightplan_string(&aircraft.ac_data).as_bytes())
                             .ok();
                         tracked.did_init_set = true;
                     }

@@ -1,7 +1,8 @@
 {
-    "airport": "KBOS",
-    "range": 30,
-    "delay": 0,
-    "floor": 0,
-    "ceiling": 99999
+  "airport": "KBOS",
+  "range": 30,
+  "delay": 0,
+  "floor": 0,
+  "ceiling": 99999,
+  "use_flightaware": true
 }

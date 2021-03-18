@@ -54,6 +54,12 @@ pub trait AircraftData {
     fn altitude(&self) -> i32;
     fn model(&self) -> &str;
     fn hex(&self) -> &str;
+    fn origin(&self) -> &str {
+        ""
+    }
+    fn destination(&self) -> &str {
+        ""
+    }
 }
 
 pub trait FromProvider {
