@@ -131,6 +131,7 @@ pub struct FlightData {
 
 impl FlightData {
     pub fn from_bytes(bytes: &[u8], stride: usize) -> Self {
+        // https://github.com/wiedehopf/tar1090/blob/a74ea50524123fd90c9ba6da351b3f7e1385b60d/html/formatter.js#L343
         let s32 = fill_buf_i32(bytes, stride / 4);
         let ua16 = fill_buf_u16(bytes, stride / 2);
         let s16 = fill_buf_i16(bytes, stride / 2);
@@ -174,23 +175,24 @@ impl FlightData {
             } else {
                 None
             },
-            alt_baro: if ua8[73] & 16 != 0 {
-                Some(s16[8] as f64 * 25.0)
-            } else {
-                None
-            },
-            alt_geom: if ua8[73] & 32 != 0 {
-                Some(s16[9] as f64 * 25.0)
-            } else {
-                None
-            },
+
             baro_rate: if ua8[75] & 1 != 0 {
-                Some(s16[10] as f64 * 8.0)
+                Some(s16[8] as f64 * 8.0)
             } else {
                 None
             },
             geom_rate: if ua8[75] & 2 != 0 {
-                Some(s16[11] as f64 * 8.0)
+                Some(s16[9] as f64 * 8.0)
+            } else {
+                None
+            },
+            alt_baro: if ua8[73] & 16 != 0 {
+                Some(s16[10] as f64 * 25.0)
+            } else {
+                None
+            },
+            alt_geom: if ua8[73] & 32 != 0 {
+                Some(s16[11] as f64 * 25.0)
             } else {
                 None
             },
