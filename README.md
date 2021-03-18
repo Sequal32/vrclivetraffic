@@ -33,6 +33,9 @@ Boston Center
 6. Connect using the new server in VRC/Euroscope.
 7. Optional: Listen to [LiveATC](https://www.liveatc.net/)
 
+## Notes
+Flightplans from FlightAware will only be pulled for airline flights with a callsign starting with three letters followed by numbers in order to limit requests.
+
 ## Configuration
 `config.json` is read by the program and can be configured as follows:
 ```
@@ -42,5 +45,6 @@ Boston Center
     "range": 30,            - How far away from the airport (in miles) aircraft should be shown
     "floor": 0,             - Aircraft below this altitude (in feet) will not be processed
     "ceiling": 99999,       - Aircraft above this altitude will not be processed
+    "use_flightaware": true - Whether to pull flight plans from flightaware. You can disable this if you experience IP limits.
 }
 ```
