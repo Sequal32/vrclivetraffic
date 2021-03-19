@@ -13,15 +13,13 @@ use airports::Airports;
 use flightaware::FlightPlan;
 use fsdparser::{ClientQueryPayload, PacketTypes, Parser};
 use serde::{Deserialize, Serialize};
+use std::collections::{hash_map::Entry, HashMap};
 use std::fmt::Display;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::net::TcpListener;
+use std::rc::Rc;
 use std::time::Instant;
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    rc::Rc,
-};
 use tracker::{TrackData, Tracker};
 use util::BoxedData;
 
@@ -57,21 +55,50 @@ fn get_remarks(ac_data: &BoxedData) -> String {
 }
 
 fn build_flightplan_string(fp: &FlightPlan, ac_data: &BoxedData) -> String {
+    let fp_remarks = format!(
+        "{}{}{}{}",
+        fp.departure_time
+            .as_ref()
+            .map(|x| format!(
+                "STD {}, ",
+                x.scheduled.naive_utc().format("%H%MZ").to_string()
+            ))
+            .unwrap_or_default(),
+        fp.arrival_time
+            .as_ref()
+            .map(|x| format!(
+                "STA {}, ",
+                x.scheduled.naive_utc().format("%H%MZ").to_string()
+            ))
+            .unwrap_or_default(),
+        fp.destination
+            .gate
+            .as_ref()
+            .map(|x| format!("Departure Gate {}, ", x))
+            .unwrap_or_default(),
+        fp.origin
+            .gate
+            .as_ref()
+            .map(|x| format!("Arrival Gate {}", x))
+            .unwrap_or_default(),
+    );
+
     format!("$FP{callsign}::I:{equipment}:{speed}:{origin}:0:0:{altitude}:{destination}:0:0:0:0::/v/ {remarks}:{route}\r\n",
         callsign = ac_data.callsign(),
-        equipment = fp.equipment,
-        speed = fp.speed,
-        origin = fp.origin,
-        altitude = fp.altitude,
-        destination = fp.destination,
-        route = fp.route,
-        remarks = get_remarks(ac_data)
+        equipment = fp.equipment.ac_type,
+        speed = fp.fp.speed,
+        origin = fp.origin.icao,
+        altitude = fp.fp.altitude,
+        destination = fp.destination.icao,
+        route = fp.fp.route,
+        remarks = get_remarks(ac_data) + ", " + &fp_remarks
     )
 }
 
-fn build_init_flightplan_string(ac_data: &BoxedData) -> String {
+fn build_init_flightplan_string(ac_data: &BoxedData, is_airline: bool) -> String {
     format!(
-        "$FP{callsign}::V:{equipment}:0:{origin}:0:0:0:{destination}:0:0:0:0::/v/ {remarks}:\r\n",
+        "$FP{callsign}::{flight_rules}:{equipment}:0:{origin}:0:0:0:{destination}:0:0:0:0::/v/ {remarks}:\r\n",
+        flight_rules = if is_airline {"I"} else {"V"},
         callsign = ac_data.callsign(),
         equipment = ac_data.model(),
         origin = ac_data.origin(),
@@ -211,7 +238,7 @@ fn main() {
         // Map to keep track of data already injected
         let mut injected_tracker: HashMap<String, TrackedData> = HashMap::new();
         let mut current_callsign = String::new();
-        let mut timer = Instant::now();
+        let mut timer: Option<Instant> = None;
         let buffer_timer = Instant::now();
 
         println!("Displaying aircraft...");
@@ -221,7 +248,8 @@ fn main() {
         'main: loop {
             tracker.step();
 
-            let should_update_position = timer.elapsed().as_secs_f32() >= 5.0;
+            let should_update_position =
+                timer.is_none() || timer.unwrap().elapsed().as_secs_f32() >= 5.0;
 
             let ac_data = tracker.get_aircraft_data();
             let aircraft_count = ac_data.len();
@@ -244,7 +272,13 @@ fn main() {
                     // Give the aircraft an initial flight plan
                     if !tracked.did_init_set && !aircraft.fp.is_some() {
                         stream
-                            .write(build_init_flightplan_string(&aircraft.ac_data).as_bytes())
+                            .write(
+                                build_init_flightplan_string(
+                                    &aircraft.ac_data,
+                                    aircraft.is_airline,
+                                )
+                                .as_bytes(),
+                            )
                             .ok();
                         tracked.did_init_set = true;
                     }
@@ -282,7 +316,7 @@ fn main() {
             if should_update_position {
                 // AKA 3 second intervals
                 // Reset position update timer
-                timer = Instant::now();
+                timer = Some(Instant::now());
 
                 // Manage buffering
                 if tracker.is_buffering() {

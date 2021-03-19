@@ -70,6 +70,7 @@ impl Tracker {
         // Only update airliners
         let callsign = data.ac_data.callsign();
         if self.airline_regex.is_match(callsign) {
+            println!("Requesting flight plan for {}", callsign);
             self.faware.request_flightplan(id, callsign);
         }
     }
@@ -82,7 +83,6 @@ impl Tracker {
 
     /// Returns the original data if not passed in in an Option
     fn check_and_create_new_aircraft(&mut self, id: &String, data: BoxedData) -> Option<BoxedData> {
-        println!("{} {} {}", id, data.callsign(), data.provider());
         // if aircraft was created
         if self.tracking.get(id).is_none() {
             // Callsign doesn't already exist
@@ -97,8 +97,10 @@ impl Tracker {
             self.callsign_map
                 .insert(data.callsign().to_string(), id.clone());
 
+            let is_airline = self.airline_regex.is_match(data.callsign());
+
             self.tracking
-                .insert(id.clone(), TrackData::new(id.clone(), data));
+                .insert(id.clone(), TrackData::new(id.clone(), data, is_airline));
 
             return None;
         }
@@ -205,8 +207,13 @@ impl Tracker {
     fn step_flightplan(&mut self) {
         if let Some(result) = self.faware.get_next_flightplan() {
             match result {
-                Ok(fp) => self.update_flightplan(&fp.id, fp.fp),
-                Err(_) => (),
+                Ok(fp) => {
+                    self.update_flightplan(&fp.id, fp.fp);
+                    println!("Received flight plan for {}", fp.callsign);
+                }
+                Err(e) => {
+                    println!("Could not receive flight plan because {:?}", e)
+                }
             }
         }
     }
@@ -258,10 +265,11 @@ pub struct TrackData {
     pub position: InterpolatePosition,
     // Meta data
     pub ac_data: BoxedData,
+    pub is_airline: bool,
 }
 
 impl TrackData {
-    pub fn new(id: String, ac_data: BoxedData) -> Self {
+    pub fn new(id: String, ac_data: BoxedData, is_airline: bool) -> Self {
         Self {
             ac_data,
             id,
@@ -270,6 +278,7 @@ impl TrackData {
             last_position_update: 0,
             at_last_position_update: Instant::now(),
             position: InterpolatePosition::default(),
+            is_airline,
         }
     }
 }

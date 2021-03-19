@@ -1,6 +1,8 @@
 use attohttpc;
+use chrono::{serde::ts_seconds, DateTime, Utc};
 use regex;
-use serde_json::{Map, Value};
+use serde::{de::DeserializeOwned, Deserialize};
+use serde_json::Value;
 
 use crate::error::Error;
 use crate::request::Request;
@@ -9,82 +11,84 @@ const ENDPOINT: &str = "https://flightaware.com/live/flight/";
 
 #[derive(Debug)]
 pub struct FlightPlan {
-    pub origin: String,
-    pub destination: String,
-    pub equipment: String,
+    pub origin: Airport,
+    pub destination: Airport,
+    pub equipment: Aircraft,
+    pub fp: PartialFlightPlan,
+    pub arrival_time: Option<Times>,
+    pub departure_time: Option<Times>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct Aircraft {
+    #[serde(rename = "type")]
+    #[serde(default)]
+    pub ac_type: String,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct PartialFlightPlan {
+    #[serde(default)]
     pub speed: u64,
+    #[serde(default)]
     pub altitude: u64,
+    #[serde(default)]
     pub route: String,
 }
 
-fn get_origin(flight_data: &Map<String, Value>) -> Option<String> {
-    Some(
-        flight_data
-            .get("origin")?
-            .as_object()?
-            .get("icao")?
-            .as_str()
-            .unwrap_or_default()
-            .to_string(),
-    )
+#[derive(Debug, Deserialize, Default)]
+pub struct Airport {
+    #[serde(default)]
+    pub icao: String,
+    pub gate: Option<String>,
+    pub terminal: Option<String>,
 }
 
-fn get_destination(flight_data: &Map<String, Value>) -> Option<String> {
-    Some(
-        flight_data
-            .get("destination")?
-            .as_object()?
-            .get("icao")?
-            .as_str()
-            .unwrap_or_default()
-            .to_string(),
-    )
+#[derive(Debug, Deserialize)]
+pub struct Times {
+    #[serde(with = "ts_seconds")]
+    pub scheduled: DateTime<Utc>,
 }
 
-fn get_equipment(flight_data: &Map<String, Value>) -> Option<String> {
-    Some(
-        flight_data
-            .get("aircraft")?
-            .as_object()?
-            .get("type")?
-            .as_str()
-            .unwrap_or_default()
-            .to_string(),
-    )
+fn deserialize_or_none<T>(data: &Value, key: &str) -> Option<T>
+where
+    T: DeserializeOwned,
+{
+    serde_json::from_value(data.get(key)?.to_owned()).ok()
+}
+
+fn deserialize_or_default<T>(data: &Value, key: &str) -> T
+where
+    T: Default + DeserializeOwned,
+{
+    deserialize_or_none(data, key).unwrap_or_default()
 }
 
 fn get_flightplan_from_json(data: &Value) -> Option<FlightPlan> {
     let flights = data.as_object()?.get("flights")?.as_object()?;
-    let (_, first_flight) = flights.iter().next()?;
+    let (_, first_flight) = flights.into_iter().next()?;
 
-    let flight_data = first_flight.as_object()?;
+    let origin: Airport = deserialize_or_none(first_flight, "origin")?; // No origin means there is pretty much no other data available
+    let destination: Airport = deserialize_or_default(first_flight, "destination");
+    let aircraft: Aircraft = deserialize_or_default(first_flight, "aircraft");
+    let arrival_time: Option<Times> = deserialize_or_none(first_flight, "gateArrivalTimes");
+    let departure_time: Option<Times> = deserialize_or_none(first_flight, "gateDepartureTimes");
 
-    let origin = get_origin(flight_data).unwrap_or_default();
-    let destination = get_destination(flight_data).unwrap_or_default();
-    let equipment = get_equipment(flight_data).unwrap_or_default();
+    let mut partial: PartialFlightPlan = deserialize_or_default(first_flight, "flightPlan");
 
-    let mut speed = 0;
-    let mut altitude = 0;
-    let mut route = String::new();
-
-    if let Some(flight_plan) = flight_data.get("flightPlan") {
-        let flight_plan = flight_plan.as_object()?;
-
-        speed = flight_plan.get("speed")?.as_u64().unwrap_or(0);
-        altitude = flight_plan.get("altitude")?.as_u64().unwrap_or(0);
-        route = flight_plan.get("route")?.as_str().unwrap_or("").to_string();
-        if altitude < 1000 {
-            altitude = altitude * 100
-        }
+    partial.altitude = if partial.altitude < 1000 {
+        partial.altitude * 100
+    } else {
+        partial.altitude
     };
 
     return Some(FlightPlan {
         origin,
-        equipment,
         destination,
-        speed,
-        altitude,
-        route,
+        fp: partial,
+        equipment: aircraft,
+        arrival_time,
+        departure_time,
     });
 }
 

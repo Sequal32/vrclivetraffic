@@ -11,7 +11,7 @@ attohttpc = "0.16"
 byteorder = "1"
 crossbeam-channel = "0.5"
 crossbeam-deque = "0.8"
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
 csv = "1.1"
 radix_fmt = "1"
 regex = "1"
