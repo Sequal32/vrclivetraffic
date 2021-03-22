@@ -12,13 +12,16 @@ mod util;
 use airports::Airports;
 use flightaware::FlightPlan;
 use fsdparser::{ClientQueryPayload, PacketTypes, Parser};
+use log::{info, LevelFilter};
 use serde::{Deserialize, Serialize};
+use simplelog::{Config, TermLogger, TerminalMode};
 use std::collections::{hash_map::Entry, HashMap};
 use std::fmt::Display;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::rc::Rc;
+use std::thread::sleep;
 use std::time::Instant;
 use tracker::{TrackData, Tracker};
 use util::BoxedData;
@@ -169,6 +172,9 @@ fn display_msg_and_exit(msg: impl Display) {
 }
 
 fn main() {
+    // Setup logging
+    TermLogger::init(LevelFilter::Info, Config::default(), TerminalMode::Stdout).ok();
+    // Bind TCP server
     let listener = match TcpListener::bind("127.0.0.1:6809") {
         Ok(l) => l,
         Err(e) => {
@@ -201,7 +207,7 @@ fn main() {
 
     let bounds = match airports.get_bounds_from_radius(&config.airport, config.range as f32) {
         Some(b) => {
-            println!("Airport set to {}", config.airport);
+            info!("Airport set to {}", config.airport);
             b
         }
         None => {
@@ -215,11 +221,11 @@ fn main() {
     weather.run();
 
     loop {
-        println!("Waiting for connection...");
+        info!("Waiting for connection...");
 
         let (mut stream, addr) = listener.accept().unwrap();
 
-        println!("Connection established! {}", addr.to_string());
+        info!("Connection established! {}", addr.to_string());
 
         // Confirms connection with connect
         stream
@@ -241,7 +247,7 @@ fn main() {
         let mut timer: Option<Instant> = None;
         let buffer_timer = Instant::now();
 
-        println!("Displaying aircraft...");
+        info!("Displaying aircraft...");
 
         tracker.start_buffering();
 
@@ -324,13 +330,13 @@ fn main() {
                     if elaspsed >= config.delay {
                         tracker.stop_buffering();
                     } else {
-                        println!(
+                        info!(
                             "Buffering... {} seconds left to buffer.",
                             (config.delay - elaspsed).max(0)
                         );
                     }
                 } else {
-                    println!("Updating aircraft: {} shown.", aircraft_count);
+                    info!("Updating aircraft: {} shown.", aircraft_count);
                 }
             }
 
@@ -348,70 +354,82 @@ fn main() {
 
             // Accept/Parse data from client
             let mut client_request = String::new();
+
             stream.read_to_string(&mut client_request).ok();
+
             if client_request.trim() != "" {
                 for request in client_request.split("\n") {
-                    match Parser::parse(request) {
-                        Some(packet) => match packet {
-                            PacketTypes::Metar(metar) => {
-                                if !metar.is_response {
-                                    weather.request_weather(&metar.payload)
+                    let packet = match Parser::parse(request) {
+                        Some(p) => p,
+                        None => continue,
+                    };
+
+                    match packet {
+                        PacketTypes::Metar(metar) => {
+                            if metar.is_response {
+                                continue;
+                            }
+
+                            info!("Getting weather for {}", metar.payload);
+                            weather.request_weather(&metar.payload)
+                        }
+                        PacketTypes::ClientQuery(cq) => match cq.payload {
+                            ClientQueryPayload::FlightPlan(callsign) => {
+                                let data = match tracker.get_data_for_callsign(&callsign) {
+                                    Some(d) => d,
+                                    None => continue,
+                                };
+
+                                let fp = match &data.fp {
+                                    Some(fp) => fp,
+                                    None => continue,
+                                };
+
+                                stream
+                                    .write(build_flightplan_string(fp, &data.ac_data).as_bytes())
+                                    .ok();
+                            }
+                            ClientQueryPayload::IsValidATCQuery(callsign) => {
+                                // Recognize callsign as a valid controller
+                                current_callsign = cq.from.to_string();
+                                info!("Validating {} as an ATC", current_callsign);
+                                // Some ATC clients handle validating ATC differently
+                                if callsign.is_some() {
+                                    stream
+                                        .write(
+                                            build_validate_atc_string_with_callsign(
+                                                &current_callsign,
+                                            )
+                                            .as_bytes(),
+                                        )
+                                        .ok();
+                                } else {
+                                    stream
+                                        .write(
+                                            build_validate_atc_string_without_callsign(
+                                                &current_callsign,
+                                            )
+                                            .as_bytes(),
+                                        )
+                                        .ok();
                                 }
                             }
-                            PacketTypes::ClientQuery(cq) => match cq.payload {
-                                ClientQueryPayload::FlightPlan(callsign) => {
-                                    if let Some(data) = tracker.get_data_for_callsign(&callsign) {
-                                        if let Some(fp) = &data.fp {
-                                            stream
-                                                .write(
-                                                    build_flightplan_string(fp, &data.ac_data)
-                                                        .as_bytes(),
-                                                )
-                                                .ok();
-                                        }
-                                    }
-                                }
-                                ClientQueryPayload::IsValidATCQuery(callsign) => {
-                                    // Recognize callsign as a valid controller
-                                    current_callsign = cq.from.to_string();
-                                    // Some ATC clients handle validating ATC differently
-                                    if callsign.is_some() {
-                                        stream
-                                            .write(
-                                                build_validate_atc_string_with_callsign(
-                                                    &current_callsign,
-                                                )
-                                                .as_bytes(),
-                                            )
-                                            .ok();
-                                    } else {
-                                        stream
-                                            .write(
-                                                build_validate_atc_string_without_callsign(
-                                                    &current_callsign,
-                                                )
-                                                .as_bytes(),
-                                            )
-                                            .ok();
-                                    }
-                                }
-                                _ => (),
-                            },
                             _ => (),
                         },
-                        None => (),
+                        _ => (),
                     }
                 }
             }
 
             // Step stuff
             if let Some(Ok(metar)) = weather.get_next_weather() {
+                info!("Got metar {}", metar);
                 stream
                     .write(build_metar_string(&current_callsign, &metar).as_bytes())
                     .ok();
             }
 
-            std::thread::sleep(std::time::Duration::from_millis(10));
+            sleep(std::time::Duration::from_millis(10));
         }
     }
 }

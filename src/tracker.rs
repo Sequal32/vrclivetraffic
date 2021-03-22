@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 use std::time::Instant;
 
+use log::{info, warn};
 use regex::Regex;
 
 use crate::airports::Airports;
@@ -70,7 +71,7 @@ impl Tracker {
         // Only update airliners
         let callsign = data.ac_data.callsign();
         if self.airline_regex.is_match(callsign) {
-            println!("Requesting flight plan for {}", callsign);
+            info!("Requesting flight plan for {}", callsign);
             self.faware.request_flightplan(id, callsign);
         }
     }
@@ -93,6 +94,8 @@ impl Tracker {
             if data.callsign().len() <= 4 {
                 return Some(data);
             }
+
+            info!("Creating {}", data.callsign());
 
             self.callsign_map
                 .insert(data.callsign().to_string(), id.clone());
@@ -119,6 +122,7 @@ impl Tracker {
 
         for removing in to_remove {
             let data = self.tracking.remove(&removing).unwrap();
+            info!("Removing {}", data.ac_data.callsign());
             self.callsign_map.remove(data.ac_data.callsign());
         }
     }
@@ -134,10 +138,10 @@ impl Tracker {
                         all_data.push((key, value));
                     }
                 }
-                Err(e) => println!(
+                Err(e) => warn!(
                     "Error fetching data from {}! Reason: {:?}",
                     provider.get_name(),
-                    e
+                    e,
                 ),
             }
         }
@@ -209,11 +213,9 @@ impl Tracker {
             match result {
                 Ok(fp) => {
                     self.update_flightplan(&fp.id, fp.fp);
-                    println!("Received flight plan for {}", fp.callsign);
+                    info!("Received flight plan for {}", fp.callsign);
                 }
-                Err(e) => {
-                    println!("Could not receive flight plan because {:?}", e)
-                }
+                Err(e) => info!("Could not receive flight plan because {:?}", e),
             }
         }
     }
