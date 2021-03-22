@@ -150,7 +150,7 @@ impl Tracker {
         }
     }
 
-    fn update_position(&mut self, id: &str, new_ac_data: &BoxedData) {
+    fn update_position(&mut self, id: &str, new_ac_data: BoxedData) {
         let current_data = match self.tracking.get_mut(id) {
             Some(d) => d,
             None => return,
@@ -168,6 +168,7 @@ impl Tracker {
         );
         current_data.last_position_update = new_ac_data.timestamp();
         current_data.at_last_position_update = Instant::now();
+        current_data.ac_data = new_ac_data;
     }
 
     fn update_aircraft(&mut self) {
@@ -192,7 +193,7 @@ impl Tracker {
             }
 
             if let Some(new_data) = self.check_and_create_new_aircraft(&id, aircraft) {
-                self.update_position(&id, &new_data);
+                self.update_position(&id, new_data);
                 self.try_update_flightplan(&id);
             }
 
