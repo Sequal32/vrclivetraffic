@@ -1,6 +1,5 @@
 use super::util::{
-    convert_char_array_to_string, fill_buf_i16, fill_buf_i32, fill_buf_u16, fill_buf_u32,
-    get_navmodes_from_num, get_track_type_from_num,
+    as_other_array, convert_char_array_to_string, get_navmodes_from_num, get_track_type_from_num,
 };
 use radix_fmt::radix;
 
@@ -42,7 +41,7 @@ pub struct BoundingLimits {
 
 impl BoundingLimits {
     pub fn from_bytes(bytes: &[u8]) -> Self {
-        let bytes_i16 = fill_buf_i16(bytes, 4);
+        let bytes_i16: &[i16] = as_other_array(bytes, 4);
         Self {
             south: bytes_i16[0],
             west: bytes_i16[1],
@@ -133,10 +132,10 @@ pub struct ADSBExData {
 impl ADSBExData {
     pub fn from_bytes(bytes: &[u8], stride: usize, time: f64) -> Self {
         // https://github.com/wiedehopf/tar1090/blob/a74ea50524123fd90c9ba6da351b3f7e1385b60d/html/formatter.js#L343
-        let s32 = fill_buf_i32(bytes, stride / 4);
-        let ua16 = fill_buf_u16(bytes, stride / 2);
-        let s16 = fill_buf_i16(bytes, stride / 2);
-        let ua8 = &bytes[0..stride];
+        let s32: &[i32] = as_other_array(bytes, stride / 4);
+        let ua16: &[u16] = as_other_array(bytes, stride / 2);
+        let s16: &[i16] = as_other_array(bytes, stride / 2);
+        let ua8: &[u8] = &bytes[0..stride];
 
         // Hex
         let mut hex = format!("{:x}", s32[0] & ((1 << 24) - 1)).to_uppercase();
@@ -381,7 +380,7 @@ pub struct BinCraftData {
 
 impl BinCraftData {
     pub fn from_bytes(bytes: &[u8]) -> Self {
-        let vals: Box<[u32]> = fill_buf_u32(bytes, 5);
+        let vals: &[u32] = as_other_array(bytes, 5);
 
         let time = (vals[0] / 1000) as f64 + (vals[1] as f64 * 4294867.296);
         let stride = vals[2] as usize;
