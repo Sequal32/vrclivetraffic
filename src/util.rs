@@ -1,6 +1,13 @@
 use std::collections::HashMap;
 
+use lazy_static::lazy_static;
+use regex::Regex;
+
 use crate::error::Error;
+
+lazy_static! {
+    static ref AIRLINE_REGEX: Regex = Regex::new(r"[A-z]{3}\d+").unwrap();
+}
 
 pub fn convert_miles_to_lat(miles: f32) -> f32 {
     return miles / 69.0;
@@ -59,6 +66,12 @@ pub trait AircraftData {
     }
     fn destination(&self) -> &str {
         ""
+    }
+    fn is_airline(&self) -> bool {
+        AIRLINE_REGEX.is_match(self.callsign())
+    }
+    fn get_airline(&self) -> Option<&str> {
+        Some(AIRLINE_REGEX.captures(self.callsign())?.get(0)?.as_str())
     }
 }
 

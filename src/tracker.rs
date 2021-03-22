@@ -3,7 +3,6 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use log::{info, warn};
-use regex::Regex;
 
 use crate::airports::Airports;
 use crate::flightaware::{FlightAware, FlightPlan};
@@ -26,8 +25,6 @@ pub struct Tracker {
 
     floor: i32,
     ceiling: i32,
-
-    airline_regex: Regex,
 }
 
 impl Tracker {
@@ -47,8 +44,6 @@ impl Tracker {
 
             floor,
             ceiling,
-
-            airline_regex: Regex::new(r"[A-z]{3}\d+").unwrap(),
         }
     }
 
@@ -69,9 +64,11 @@ impl Tracker {
         data.fp_did_try_update = true;
 
         // Only update airliners
-        let callsign = data.ac_data.callsign();
-        if self.airline_regex.is_match(callsign) {
+        if data.ac_data.is_airline() {
+            let callsign = data.ac_data.callsign();
+
             info!("Requesting flight plan for {}", callsign);
+
             self.faware.request_flightplan(id, callsign);
         }
     }
@@ -100,10 +97,8 @@ impl Tracker {
             self.callsign_map
                 .insert(data.callsign().to_string(), id.clone());
 
-            let is_airline = self.airline_regex.is_match(data.callsign());
-
             self.tracking
-                .insert(id.clone(), TrackData::new(id.clone(), data, is_airline));
+                .insert(id.clone(), TrackData::new(id.clone(), data));
 
             return None;
         }
@@ -267,11 +262,10 @@ pub struct TrackData {
     pub position: InterpolatePosition,
     // Meta data
     pub ac_data: BoxedData,
-    pub is_airline: bool,
 }
 
 impl TrackData {
-    pub fn new(id: String, ac_data: BoxedData, is_airline: bool) -> Self {
+    pub fn new(id: String, ac_data: BoxedData) -> Self {
         Self {
             ac_data,
             id,
@@ -280,7 +274,6 @@ impl TrackData {
             last_position_update: 0,
             at_last_position_update: Instant::now(),
             position: InterpolatePosition::default(),
-            is_airline,
         }
     }
 }
