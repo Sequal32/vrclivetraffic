@@ -8,10 +8,10 @@ use crate::airports::Airports;
 use crate::flightaware::{FlightAware, FlightPlan};
 use crate::flightradar::FlightRadar;
 use crate::interpolate::InterpolatePosition;
-use crate::util::{AircraftProvider, Bounds};
+use crate::util::{is_valid_callsign, AircraftProvider, Bounds};
 use crate::{adsbexchange::AdsbExchange, util::BoxedData};
 
-const POLL_RATE: u64 = 3;
+const POLL_RATE: u64 = 6;
 
 pub struct Tracker {
     providers: Vec<Box<dyn AircraftProvider>>,
@@ -28,12 +28,27 @@ pub struct Tracker {
 }
 
 impl Tracker {
-    pub fn new(radar_loc: &Bounds, airports: Rc<Airports>, floor: i32, ceiling: i32) -> Self {
-        Self {
-            providers: vec![
+    pub fn new(
+        radar_loc: &Bounds,
+        airports: Rc<Airports>,
+        floor: i32,
+        ceiling: i32,
+        prefer_fr: bool,
+    ) -> Self {
+        let providers: Vec<Box<dyn AircraftProvider>> = match prefer_fr {
+            false => vec![
+                Box::new(AdsbExchange::new(radar_loc)),
+                Box::new(FlightRadar::new(radar_loc, airports)),
+            ],
+
+            true => vec![
                 Box::new(FlightRadar::new(radar_loc, airports)),
                 Box::new(AdsbExchange::new(radar_loc)),
             ],
+        };
+
+        Self {
+            providers,
             faware: FlightAware::new(),
 
             buffer: VecDeque::new(),
@@ -47,11 +62,15 @@ impl Tracker {
         }
     }
 
-    pub fn run_faware(&self) {
+    pub fn run_faware(&mut self) {
         self.faware.run();
     }
 
     fn try_update_flightplan(&mut self, id: &String) {
+        if !self.faware.running {
+            return;
+        }
+
         let data = match self.tracking.get_mut(id) {
             Some(d) => d,
             None => return,
@@ -88,7 +107,7 @@ impl Tracker {
                 return Some(data);
             }
             // Callsign is invalid (FlightRadar24 sometimes puts the aircraft type as the callsign...)
-            if data.callsign().len() <= 4 {
+            if !is_valid_callsign(data.callsign()) {
                 return Some(data);
             }
 
@@ -106,20 +125,18 @@ impl Tracker {
     }
 
     // Removes aircraft that have been lost on radar
-    fn remove_untracked(&mut self, keys: &HashSet<String>) {
-        let mut to_remove = Vec::new();
+    fn remove_untracked(&mut self, updated_keys: &HashSet<String>) {
+        let callsign_map = &mut self.callsign_map;
 
-        for key in self.tracking.keys() {
-            if !keys.contains(key) {
-                to_remove.push(key.clone());
+        self.tracking.retain(|key, data| {
+            if !updated_keys.contains(key) {
+                info!("Removing {}", data.ac_data.callsign());
+                callsign_map.remove(data.ac_data.callsign());
+                false
+            } else {
+                true
             }
-        }
-
-        for removing in to_remove {
-            let data = self.tracking.remove(&removing).unwrap();
-            info!("Removing {}", data.ac_data.callsign());
-            self.callsign_map.remove(data.ac_data.callsign());
-        }
+        })
     }
 
     fn get_next_aircraft_update(&mut self) -> Option<Vec<(String, BoxedData)>> {
@@ -156,9 +173,9 @@ impl Tracker {
             None => return,
         };
 
-        if new_ac_data.timestamp() <= current_data.last_position_update {
-            return;
-        }
+        // if new_ac_data.timestamp() <= current_data.last_position_update {
+        //     return;
+        // }
 
         current_data.position = InterpolatePosition::new(
             new_ac_data.latitude(),

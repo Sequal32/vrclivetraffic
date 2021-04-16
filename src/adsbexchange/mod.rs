@@ -1,6 +1,7 @@
 mod bincraft;
 mod util;
 pub use bincraft::*;
+use log::warn;
 
 use crate::util::{
     AircraftData, AircraftMap, AircraftProvider, Bounds, BoxedData, ProvidedAircraftData,
@@ -136,9 +137,15 @@ impl AircraftProvider for AdsbExchange {
         let mut return_data = HashMap::new();
 
         for index in self.global_indexes.iter() {
-            let response = self.get_request(index).send()?.error_for_status()?;
+            let response = match self.get_request(index).send()?.error_for_status() {
+                Ok(r) => r,
+                Err(e) => {
+                    warn!("Error fetching index {} from ADSBExchange: {}", index, e);
+                    continue;
+                }
+            };
 
-            let bytes = response.error_for_status()?.bytes()?;
+            let bytes = response.bytes()?;
 
             let parsed_data = BinCraftData::from_bytes(&bytes);
 

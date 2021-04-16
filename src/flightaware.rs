@@ -107,17 +107,20 @@ pub struct FlightPlanResult {
 
 pub struct FlightAware {
     flightplans: Request<Result<FlightPlanResult, Error>, FlightPlanRequest>,
+    pub running: bool,
 }
 
 impl FlightAware {
     pub fn new() -> Self {
         Self {
             flightplans: Request::new(5),
+            running: false,
         }
     }
 
-    pub fn run(&self) {
+    pub fn run(&mut self) {
         let exp = regex::Regex::new(r"var trackpollBootstrap = (\{.+\});").unwrap();
+        self.running = true;
 
         self.flightplans.run(move |job| {
             // Get data from flightaware

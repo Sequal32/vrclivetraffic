@@ -7,6 +7,9 @@ use crate::error::Error;
 
 lazy_static! {
     static ref AIRLINE_REGEX: Regex = Regex::new(r"[A-z]{3}\d+").unwrap();
+    static ref CALLSIGN_REGEX: Regex = Regex::new(r"[A-Z]{3}[A-Z0-9]{1,}").unwrap();
+    static ref REGISTRATION_REGEX: Regex =
+        Regex::new(r"[A-Z]-[A-Z]{4}|[A-Z]{2}-[A-Z]{3}|N[0-9]{1,5}[A-Z]{0,2}").unwrap();
 }
 
 pub fn convert_miles_to_lat(miles: f32) -> f32 {
@@ -15,6 +18,10 @@ pub fn convert_miles_to_lat(miles: f32) -> f32 {
 
 pub fn convert_miles_to_lon(miles: f32) -> f32 {
     return miles / 54.6;
+}
+
+pub fn is_valid_callsign(callsign: &str) -> bool {
+    CALLSIGN_REGEX.is_match(callsign) || REGISTRATION_REGEX.is_match(callsign)
 }
 
 #[derive(Debug, Default, Clone)]
