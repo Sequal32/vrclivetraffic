@@ -1,4 +1,10 @@
-use std::{sync::Arc, thread};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering::SeqCst},
+        Arc,
+    },
+    thread,
+};
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use crossbeam_deque::{Steal, Worker};
@@ -8,6 +14,7 @@ pub struct Request<T, J> {
     rx: Receiver<T>,
     worker: Worker<J>,
     num_threads: u32,
+    running: Arc<AtomicBool>,
 }
 
 impl<T, J> Request<T, J>
@@ -22,6 +29,7 @@ where
             tx,
             worker: Worker::new_fifo(),
             num_threads,
+            running: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -31,11 +39,16 @@ where
     {
         let worker = Arc::new(worker);
 
+        self.running.store(false, SeqCst);
+
         // Spawn worker threads to read from queue
         (0..self.num_threads).for_each(|_| {
             let s = self.worker.stealer();
             let result_transmitter = self.tx.clone();
             let worker = worker.clone();
+
+            let running_clone = self.running.clone();
+
             // Process tasks
             thread::spawn(move || loop {
                 match s.steal() {
@@ -44,9 +57,18 @@ where
                     }
                     _ => (),
                 }
+
+                if running_clone.load(SeqCst) {
+                    break;
+                }
+
                 thread::sleep(std::time::Duration::from_millis(500));
             });
         });
+    }
+
+    pub fn stop(&self) {
+        self.running.store(true, SeqCst);
     }
 
     pub fn get_next(&self) -> Option<T> {

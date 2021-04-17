@@ -3,10 +3,8 @@ mod util;
 pub use bincraft::*;
 use log::warn;
 
-use crate::util::{
-    AircraftData, AircraftMap, AircraftProvider, Bounds, BoxedData, ProvidedAircraftData,
-};
-use crate::{error::Error, util::FromProvider};
+use crate::error::Error;
+use crate::util::{AircraftData, AircraftMap, AircraftProvider, Bounds};
 use attohttpc::{body::Empty, PreparedRequest, Session};
 use std::collections::{HashMap, HashSet};
 
@@ -133,7 +131,7 @@ impl AdsbExchange {
 }
 
 impl AircraftProvider for AdsbExchange {
-    fn get_aircraft(&mut self) -> Result<AircraftMap, Error> {
+    fn get_aircraft(&self) -> Result<AircraftMap, Error> {
         let mut return_data = HashMap::new();
 
         for index in self.global_indexes.iter() {
@@ -151,7 +149,7 @@ impl AircraftProvider for AdsbExchange {
 
             for aircraft in parsed_data.aircraft {
                 let ident = aircraft.hex.clone();
-                return_data.insert(ident, Box::new(aircraft) as BoxedData);
+                return_data.insert(ident, aircraft.into());
             }
         }
 
@@ -163,56 +161,23 @@ impl AircraftProvider for AdsbExchange {
     }
 }
 
-impl AircraftData for ADSBExData {
-    fn squawk(&self) -> &str {
-        self.squawk.as_ref().map(|x| x as &str).unwrap_or("")
-    }
-
-    fn callsign(&self) -> &str {
-        self.flight.as_ref().map(|x| x as &str).unwrap_or("")
-    }
-
-    fn is_on_ground(&self) -> bool {
-        self.airground == 1
-    }
-
-    fn latitude(&self) -> f32 {
-        self.lat.unwrap_or(0.0) as f32
-    }
-
-    fn longitude(&self) -> f32 {
-        self.lon.unwrap_or(0.0) as f32
-    }
-
-    fn heading(&self) -> u32 {
-        self.track.map(|x| x as u32).unwrap_or(0)
-    }
-
-    fn ground_speed(&self) -> u32 {
-        self.gs.map(|x| x as u32).unwrap_or(0)
-    }
-
-    fn timestamp(&self) -> u64 {
-        self.time as u64
-    }
-
-    fn altitude(&self) -> i32 {
-        self.alt_baro.map(|x| x as i32).unwrap_or(0)
-    }
-
-    fn model(&self) -> &str {
-        &self.aircraft_type
-    }
-
-    fn hex(&self) -> &str {
-        &self.hex
+impl Into<AircraftData> for ADSBExData {
+    fn into(self) -> AircraftData {
+        AircraftData {
+            squawk: self.squawk.unwrap_or_default(),
+            callsign: self.flight.unwrap_or_default(),
+            is_on_ground: self.airground == 1,
+            latitude: self.lat.map(|x| x as f32).unwrap_or_default(),
+            longitude: self.lon.map(|x| x as f32).unwrap_or_default(),
+            heading: self.track.map(|x| x as u32).unwrap_or_default(),
+            ground_speed: self.ias.map(|x| x as u32).unwrap_or_default(),
+            timestamp: self.time as u64,
+            altitude: self.alt_baro.map(|x| x as i32).unwrap_or_default(),
+            model: self.aircraft_type,
+            hex: self.hex,
+            origin: String::new(),
+            destination: String::new(),
+            provider: "ADSBExchange",
+        }
     }
 }
-
-impl FromProvider for ADSBExData {
-    fn provider(&self) -> &str {
-        "ADSBExchange"
-    }
-}
-
-impl ProvidedAircraftData for ADSBExData {}

@@ -161,3 +161,9 @@ impl FlightAware {
         return self.flightplans.get_next();
     }
 }
+
+impl Drop for FlightAware {
+    fn drop(&mut self) {
+        self.flightplans.stop()
+    }
+}

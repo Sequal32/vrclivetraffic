@@ -5,6 +5,7 @@ mod flightaware;
 mod flightradar;
 mod interpolate;
 mod noaa;
+mod providers;
 mod request;
 mod tracker;
 mod util;
@@ -21,20 +22,19 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::net::TcpStream;
-use std::rc::Rc;
 use std::thread::sleep;
 use std::time::Instant;
 use std::{fmt::Display, time::Duration};
 use tracker::{TrackData, Tracker};
-use util::BoxedData;
+use util::AircraftData;
 
 const CONFIG_FILENAME: &str = "config.json";
-const AIRPORT_DATA_FILENAME: &str = "airports.dat";
+const AIRPORT_DATA_FILENAME: &str = "airports.csv";
 
 fn build_aircraft_string(data: &mut TrackData, should_interpolate: bool) -> String {
     let ac_data = &data.ac_data;
     // Calculate PBH
-    let h = ac_data.heading() as f64 / 360.0 * 1024.0;
+    let h = ac_data.heading as f64 / 360.0 * 1024.0;
     let pbh: i32 = 0 << 22 | 0 << 12 | (h as i32) << 2;
 
     let pos = if should_interpolate {
@@ -45,21 +45,21 @@ fn build_aircraft_string(data: &mut TrackData, should_interpolate: bool) -> Stri
 
     format!(
         "@N:{callsign}:{squawk}:1:{lat}:{lon}:{alt}:{speed}:{pbh}:0\r\n",
-        callsign = ac_data.callsign(),
-        squawk = ac_data.squawk(),
+        callsign = ac_data.callsign,
+        squawk = ac_data.squawk,
         lat = pos.lat,
         lon = pos.lon,
-        alt = ac_data.altitude(),
-        speed = ac_data.ground_speed(),
+        alt = ac_data.altitude,
+        speed = ac_data.ground_speed,
         pbh = pbh
     )
 }
 
-fn get_remarks(ac_data: &BoxedData) -> String {
-    format!("Provider {}, Hex {}", ac_data.provider(), ac_data.hex())
+fn get_remarks(ac_data: &AircraftData) -> String {
+    format!("Provider {}, Hex {}", ac_data.provider, ac_data.hex)
 }
 
-fn build_flightplan_string(fp: &FlightPlan, ac_data: &BoxedData) -> String {
+fn build_flightplan_string(fp: &FlightPlan, remarks: &str, ac_data: &AircraftData) -> String {
     let fp_remarks = format!(
         "{}{}{}{}",
         fp.departure_time
@@ -89,26 +89,30 @@ fn build_flightplan_string(fp: &FlightPlan, ac_data: &BoxedData) -> String {
     );
 
     format!("$FP{callsign}::I:{equipment}:{speed}:{origin}:0:0:{altitude}:{destination}:0:0:0:0::/v/ {remarks}:{route}\r\n",
-        callsign = ac_data.callsign(),
+        callsign = ac_data.callsign,
         equipment = fp.equipment.ac_type,
         speed = fp.fp.speed,
         origin = fp.origin.icao,
         altitude = fp.fp.altitude,
         destination = fp.destination.icao,
         route = fp.fp.route,
-        remarks = get_remarks(ac_data) + ", " + &fp_remarks
+        remarks = format!("{}, {}", remarks, fp_remarks)
     )
 }
 
-fn build_init_flightplan_string(ac_data: &BoxedData) -> String {
+fn build_init_flightplan_string(
+    ac_data: &AircraftData,
+    remarks: &str,
+    airports: &Airports,
+) -> String {
     format!(
         "$FP{callsign}::{flight_rules}:{equipment}:0:{origin}:0:0:0:{destination}:0:0:0:0::/v/ {remarks}:\r\n",
         flight_rules = if ac_data.is_airline() {"I"} else {"V"},
-        callsign = ac_data.callsign(),
-        equipment = ac_data.model(),
-        origin = ac_data.origin(),
-        destination = ac_data.destination(),
-        remarks = get_remarks(ac_data)
+        callsign = ac_data.callsign,
+        equipment = ac_data.model,
+        origin = airports.get_icao_from_iata(&ac_data.origin).unwrap_or(&ac_data.origin),
+        destination = airports.get_icao_from_iata(&ac_data.destination).unwrap_or(&ac_data.destination),
+        remarks = remarks
     )
 }
 
@@ -131,12 +135,12 @@ fn build_validate_atc_string_without_callsign(callsign: &str) -> String {
     format!("$CRSERVER:{0:}:ATC:Y\r\n", callsign)
 }
 
-fn build_plane_info_string(callsign: &str, to: &str, ac_data: &BoxedData) -> String {
+fn build_plane_info_string(callsign: &str, to: &str, ac_data: &AircraftData) -> String {
     format!(
         "#SB{}:{}:PI:GEN:EQUIPMENT={}{}\r\n",
         callsign,
         to,
-        ac_data.model(),
+        ac_data.model,
         ac_data
             .get_airline()
             .map_or(String::new(), |x| { format!(":{}", x) })
@@ -147,6 +151,7 @@ fn build_plane_info_string(callsign: &str, to: &str, ac_data: &BoxedData) -> Str
 struct TrackedData {
     did_set_fp: bool,
     did_init_set: bool,
+    last_remarks: String,
 }
 
 struct StreamData {
@@ -226,7 +231,7 @@ fn main() {
 
     // Load airports
     let airports = match Airports::new(AIRPORT_DATA_FILENAME) {
-        Ok(a) => Rc::new(a),
+        Ok(a) => a,
         Err(e) => {
             display_msg_and_exit(format!("Could not read airports.dat! Reason: {}", e));
             return;
@@ -256,7 +261,6 @@ fn main() {
         // Instantiate main tracker
         let mut tracker = Tracker::new(
             &bounds,
-            airports.clone(),
             config.floor,
             config.ceiling,
             config.prefer_flight_radar,
@@ -265,6 +269,7 @@ fn main() {
         if config.use_flightaware {
             tracker.run_faware();
         }
+        tracker.run();
 
         // Map to keep track of data already injected
         let mut injected_tracker: HashMap<String, TrackedData> = HashMap::new();
@@ -309,7 +314,7 @@ fn main() {
             tracker.step();
 
             let should_update_position =
-                timer.is_none() || timer.unwrap().elapsed().as_secs_f32() >= 5.0;
+                timer.is_none() || timer.unwrap().elapsed().as_secs_f32() >= 3.0;
 
             let ac_data = tracker.get_aircraft_data();
             let aircraft_count = ac_data.len();
@@ -321,7 +326,7 @@ fn main() {
                 };
                 // Update position either in place or interpolated
                 if should_update_position {
-                    let should_interpolate = !aircraft.ac_data.is_on_ground()
+                    let should_interpolate = !aircraft.ac_data.is_on_ground
                         && aircraft.at_last_position_update.elapsed().as_secs() < 20;
 
                     write_str(
@@ -330,37 +335,49 @@ fn main() {
                     );
 
                     // Give the aircraft an initial flight plan
-                    if !tracked.did_init_set && !aircraft.fp.is_some() {
+                    let should_set_init = !tracked.did_init_set && !aircraft.fp.is_some();
+                    let new_remarks = get_remarks(&aircraft.ac_data);
+                    let metadata_was_updated = new_remarks != tracked.last_remarks;
+
+                    if should_set_init || metadata_was_updated {
                         write_str(
                             &mut streams,
-                            &build_init_flightplan_string(&aircraft.ac_data),
+                            &build_init_flightplan_string(
+                                &aircraft.ac_data,
+                                &new_remarks,
+                                &airports,
+                            ),
                         );
+
                         tracked.did_init_set = true;
                     }
 
                     // Give the aircraft a flight plan if available
-                    if !tracked.did_set_fp && aircraft.fp.is_some() {
+                    if (!tracked.did_set_fp || metadata_was_updated) && aircraft.fp.is_some() {
                         write_str(
                             &mut streams,
                             &build_flightplan_string(
                                 aircraft.fp.as_ref().unwrap(),
+                                &new_remarks,
                                 &aircraft.ac_data,
                             ),
                         );
                         // Not squawking anything... will have duplicates if we assign an empty code
-                        if aircraft.ac_data.squawk() != "0000" {
+                        if aircraft.ac_data.squawk != "0000" {
                             write_str(
                                 &mut streams,
                                 &build_beacon_code_string(
                                     &current_atc_callsign,
-                                    &aircraft.ac_data.callsign(),
-                                    &aircraft.ac_data.squawk(),
+                                    &aircraft.ac_data.callsign,
+                                    &aircraft.ac_data.squawk,
                                 ),
                             );
                         }
 
                         tracked.did_set_fp = true;
                     }
+
+                    tracked.last_remarks = new_remarks;
                 }
             }
 
@@ -450,7 +467,12 @@ fn main() {
 
                                     stream
                                         .write(
-                                            build_flightplan_string(fp, &data.ac_data).as_bytes(),
+                                            build_flightplan_string(
+                                                fp,
+                                                &get_remarks(&data.ac_data),
+                                                &data.ac_data,
+                                            )
+                                            .as_bytes(),
                                         )
                                         .ok();
                                 }

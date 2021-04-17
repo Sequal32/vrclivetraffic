@@ -56,42 +56,67 @@ pub struct Bounds {
     pub lon2: f32,
 }
 
-pub trait AircraftData {
-    fn squawk(&self) -> &str;
-    fn callsign(&self) -> &str;
-    fn is_on_ground(&self) -> bool;
-    fn latitude(&self) -> f32;
-    fn longitude(&self) -> f32;
-    fn heading(&self) -> u32;
-    fn ground_speed(&self) -> u32;
-    fn timestamp(&self) -> u64;
-    fn altitude(&self) -> i32;
-    fn model(&self) -> &str;
-    fn hex(&self) -> &str;
-    fn origin(&self) -> &str {
-        ""
-    }
-    fn destination(&self) -> &str {
-        ""
-    }
-    fn is_airline(&self) -> bool {
-        AIRLINE_REGEX.is_match(self.callsign())
-    }
-    fn get_airline(&self) -> Option<&str> {
-        Some(AIRLINE_REGEX.captures(self.callsign())?.get(0)?.as_str())
-    }
+pub struct AircraftData {
+    pub squawk: String,
+    pub callsign: String,
+    pub is_on_ground: bool,
+    pub latitude: f32,
+    pub longitude: f32,
+    pub heading: u32,
+    pub ground_speed: u32,
+    pub timestamp: u64,
+    pub altitude: i32,
+    pub model: String,
+    pub hex: String,
+    pub origin: String,
+    pub destination: String,
+    pub provider: &'static str,
 }
 
-pub trait FromProvider {
-    fn provider(&self) -> &str;
+impl AircraftData {
+    pub fn is_airline(&self) -> bool {
+        AIRLINE_REGEX.is_match(&self.callsign)
+    }
+
+    pub fn get_airline(&self) -> Option<&str> {
+        Some(AIRLINE_REGEX.captures(&self.callsign)?.get(0)?.as_str())
+    }
+
+    pub fn combine_with(self, rhs: Self) -> Self {
+        let update_space = rhs.timestamp > self.timestamp;
+
+        macro_rules! replace_if {
+            ($condition: expr, $field: ident) => {
+                if $condition {
+                    self.$field
+                } else {
+                    rhs.$field
+                }
+            };
+        }
+
+        Self {
+            squawk: self.squawk,
+            callsign: replace_if!(is_valid_callsign(&self.callsign), callsign),
+            is_on_ground: self.is_on_ground,
+            latitude: replace_if!(self.latitude != 0.0 && !update_space, latitude),
+            longitude: replace_if!(self.longitude != 0.0 && !update_space, longitude),
+            heading: replace_if!(!update_space, heading),
+            ground_speed: self.ground_speed,
+            timestamp: self.timestamp,
+            altitude: replace_if!(self.altitude != 0 && !update_space, altitude),
+            model: replace_if!(self.model == "", model),
+            hex: self.hex,
+            origin: replace_if!(self.origin != "" && !update_space, origin),
+            destination: replace_if!(self.destination != "" && !update_space, destination),
+            provider: "Cobborated",
+        }
+    }
 }
 
 pub trait AircraftProvider {
-    fn get_aircraft(&mut self) -> Result<AircraftMap, Error>;
+    fn get_aircraft(&self) -> Result<AircraftMap, Error>;
     fn get_name(&self) -> &str;
 }
 
-pub trait ProvidedAircraftData: AircraftData + FromProvider {}
-
-pub type BoxedData = Box<dyn ProvidedAircraftData>;
-pub type AircraftMap = HashMap<String, BoxedData>;
+pub type AircraftMap = HashMap<String, AircraftData>;

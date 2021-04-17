@@ -382,7 +382,7 @@ impl BinCraftData {
     pub fn from_bytes(bytes: &[u8]) -> Self {
         let vals: &[u32] = as_other_array(bytes, 5);
 
-        let time = (vals[0] / 1000) as f64 + (vals[1] as f64 * 4294867.296);
+        let time = (vals[0] / 1000) as f64 + (vals[1] as f64 * 4294967.296);
         let stride = vals[2] as usize;
         let ac_count = vals[3];
         let global_index = vals[4];

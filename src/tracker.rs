@@ -1,51 +1,45 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::rc::Rc;
 use std::time::Instant;
 
 use log::{info, warn};
 
-use crate::airports::Airports;
 use crate::flightaware::{FlightAware, FlightPlan};
 use crate::flightradar::FlightRadar;
 use crate::interpolate::InterpolatePosition;
-use crate::util::{is_valid_callsign, AircraftProvider, Bounds};
-use crate::{adsbexchange::AdsbExchange, util::BoxedData};
+use crate::providers::Providers;
+use crate::util::AircraftMap;
+use crate::util::{is_valid_callsign, Bounds};
+use crate::{adsbexchange::AdsbExchange, util::AircraftData};
 
 const POLL_RATE: u64 = 6;
 
 pub struct Tracker {
-    providers: Vec<Box<dyn AircraftProvider>>,
+    providers: Providers,
     faware: FlightAware,
 
-    buffer: VecDeque<Vec<(String, BoxedData)>>,
+    buffer: VecDeque<AircraftMap>,
     is_buffering: bool,
     tracking: HashMap<String, TrackData>,
     callsign_map: HashMap<String, String>,
-    time: Instant,
+    time: Option<Instant>,
 
     floor: i32,
     ceiling: i32,
 }
 
 impl Tracker {
-    pub fn new(
-        radar_loc: &Bounds,
-        airports: Rc<Airports>,
-        floor: i32,
-        ceiling: i32,
-        prefer_fr: bool,
-    ) -> Self {
-        let providers: Vec<Box<dyn AircraftProvider>> = match prefer_fr {
+    pub fn new(radar_loc: &Bounds, floor: i32, ceiling: i32, prefer_fr: bool) -> Self {
+        let providers = Providers::new(match prefer_fr {
             false => vec![
                 Box::new(AdsbExchange::new(radar_loc)),
-                Box::new(FlightRadar::new(radar_loc, airports)),
+                Box::new(FlightRadar::new(radar_loc)),
             ],
 
             true => vec![
-                Box::new(FlightRadar::new(radar_loc, airports)),
+                Box::new(FlightRadar::new(radar_loc)),
                 Box::new(AdsbExchange::new(radar_loc)),
             ],
-        };
+        });
 
         Self {
             providers,
@@ -55,7 +49,7 @@ impl Tracker {
             is_buffering: false,
             tracking: HashMap::new(),
             callsign_map: HashMap::new(),
-            time: Instant::now(),
+            time: None,
 
             floor,
             ceiling,
@@ -64,6 +58,10 @@ impl Tracker {
 
     pub fn run_faware(&mut self) {
         self.faware.run();
+    }
+
+    pub fn run(&mut self) {
+        self.providers.run();
     }
 
     fn try_update_flightplan(&mut self, id: &String) {
@@ -84,11 +82,9 @@ impl Tracker {
 
         // Only update airliners
         if data.ac_data.is_airline() {
-            let callsign = data.ac_data.callsign();
+            info!("Requesting flight plan for {}", data.ac_data.callsign);
 
-            info!("Requesting flight plan for {}", callsign);
-
-            self.faware.request_flightplan(id, callsign);
+            self.faware.request_flightplan(id, &data.ac_data.callsign);
         }
     }
 
@@ -99,22 +95,24 @@ impl Tracker {
     }
 
     /// Returns the original data if not passed in in an Option
-    fn check_and_create_new_aircraft(&mut self, id: &String, data: BoxedData) -> Option<BoxedData> {
+    fn check_and_create_new_aircraft(
+        &mut self,
+        id: &String,
+        data: AircraftData,
+    ) -> Option<AircraftData> {
         // if aircraft was created
         if self.tracking.get(id).is_none() {
             // Callsign doesn't already exist
-            if self.callsign_map.contains_key(data.callsign()) {
+            if self.callsign_map.contains_key(&data.callsign) {
                 return Some(data);
             }
             // Callsign is invalid (FlightRadar24 sometimes puts the aircraft type as the callsign...)
-            if !is_valid_callsign(data.callsign()) {
+            if !is_valid_callsign(&data.callsign) {
                 return Some(data);
             }
 
-            info!("Creating {}", data.callsign());
-
             self.callsign_map
-                .insert(data.callsign().to_string(), id.clone());
+                .insert(data.callsign.to_string(), id.clone());
 
             self.tracking
                 .insert(id.clone(), TrackData::new(id.clone(), data));
@@ -130,8 +128,7 @@ impl Tracker {
 
         self.tracking.retain(|key, data| {
             if !updated_keys.contains(key) {
-                info!("Removing {}", data.ac_data.callsign());
-                callsign_map.remove(data.ac_data.callsign());
+                callsign_map.remove(&data.ac_data.callsign);
                 false
             } else {
                 true
@@ -139,26 +136,15 @@ impl Tracker {
         })
     }
 
-    fn get_next_aircraft_update(&mut self) -> Option<Vec<(String, BoxedData)>> {
+    fn get_next_aircraft_update(&mut self) -> Option<AircraftMap> {
         // A vector is used here instead as we want to keep duplicates in case one of the provider's data fails to validate
-        let mut all_data = Vec::new();
-
-        for provider in self.providers.iter_mut() {
-            match provider.get_aircraft() {
-                Ok(aircraft) => {
-                    for (key, value) in aircraft {
-                        all_data.push((key, value));
-                    }
-                }
-                Err(e) => warn!(
-                    "Error fetching data from {}! Reason: {:?}",
-                    provider.get_name(),
-                    e,
-                ),
+        match self.providers.get_aircraft() {
+            Some(Ok(data)) => self.buffer.push_back(data),
+            Some(Err((provider, e))) => {
+                warn!("Error fetching data from {}! Reason: {:?}", provider, e,)
             }
+            _ => {}
         }
-
-        self.buffer.push_back(all_data);
 
         if !self.is_buffering {
             return self.buffer.pop_front();
@@ -167,23 +153,22 @@ impl Tracker {
         }
     }
 
-    fn update_position(&mut self, id: &str, new_ac_data: BoxedData) {
+    fn update_position(&mut self, id: &str, new_ac_data: AircraftData) {
         let current_data = match self.tracking.get_mut(id) {
             Some(d) => d,
             None => return,
         };
 
-        // if new_ac_data.timestamp() <= current_data.last_position_update {
-        //     return;
-        // }
+        if new_ac_data.timestamp <= current_data.ac_data.timestamp {
+            return;
+        }
 
         current_data.position = InterpolatePosition::new(
-            new_ac_data.latitude(),
-            new_ac_data.longitude(),
-            new_ac_data.heading(),
-            new_ac_data.ground_speed(),
+            new_ac_data.latitude,
+            new_ac_data.longitude,
+            new_ac_data.heading,
+            new_ac_data.ground_speed,
         );
-        current_data.last_position_update = new_ac_data.timestamp();
         current_data.at_last_position_update = Instant::now();
         current_data.ac_data = new_ac_data;
     }
@@ -202,10 +187,11 @@ impl Tracker {
                 continue;
             }
             // Invalid callsigns/callsign not received
-            if aircraft.callsign().trim() == "" {
+            if aircraft.callsign.trim() == "" {
                 continue;
             }
-            if aircraft.altitude() < self.floor || aircraft.altitude() > self.ceiling {
+
+            if aircraft.altitude < self.floor || aircraft.altitude > self.ceiling {
                 continue;
             }
 
@@ -247,12 +233,17 @@ impl Tracker {
     }
 
     pub fn step(&mut self) {
-        let elasped = self.time.elapsed().as_secs();
-        if elasped > POLL_RATE {
-            self.update_aircraft();
-            self.time = Instant::now();
+        let should_fetch = self
+            .time
+            .map(|x| x.elapsed().as_secs() > POLL_RATE)
+            .unwrap_or(true);
+
+        if should_fetch {
+            self.providers.request();
+            self.time = Some(Instant::now());
         }
 
+        self.update_aircraft();
         self.step_flightplan();
     }
 
@@ -275,21 +266,19 @@ pub struct TrackData {
     pub fp_did_try_update: bool,
     pub fp: Option<FlightPlan>,
     // Position
-    last_position_update: u64,
     pub at_last_position_update: Instant,
     pub position: InterpolatePosition,
     // Meta data
-    pub ac_data: BoxedData,
+    pub ac_data: AircraftData,
 }
 
 impl TrackData {
-    pub fn new(id: String, ac_data: BoxedData) -> Self {
+    pub fn new(id: String, ac_data: AircraftData) -> Self {
         Self {
             ac_data,
             id,
             fp: None,
             fp_did_try_update: false,
-            last_position_update: 0,
             at_last_position_update: Instant::now(),
             position: InterpolatePosition::default(),
         }
