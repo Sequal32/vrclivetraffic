@@ -109,7 +109,7 @@ impl AircraftData {
             hex: self.hex,
             origin: replace_if!(self.origin != "" && !update_space, origin),
             destination: replace_if!(self.destination != "" && !update_space, destination),
-            provider: "Cobborated",
+            provider: "Combined",
         }
     }
 }

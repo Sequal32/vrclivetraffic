@@ -349,7 +349,7 @@ fn main() {
                     let new_remarks = get_remarks(&aircraft.ac_data);
                     let metadata_was_updated = new_remarks != tracked.last_remarks;
 
-                    if should_set_init || metadata_was_updated {
+                    if (should_set_init || metadata_was_updated) && aircraft.fp.is_none() {
                         write_str(
                             &mut streams,
                             &build_init_flightplan_string(
