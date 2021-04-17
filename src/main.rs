@@ -169,7 +169,6 @@ struct ConfigData {
     floor: i32,
     ceiling: i32,
     use_flightaware: bool,
-    prefer_flight_radar: bool,
 }
 
 impl Default for ConfigData {
@@ -181,7 +180,6 @@ impl Default for ConfigData {
             floor: 0,
             ceiling: 99999,
             use_flightaware: true,
-            prefer_flight_radar: true,
         }
     }
 }
@@ -276,12 +274,7 @@ fn main() {
         let mut streams: Vec<StreamData> = Vec::new();
 
         // Instantiate main tracker
-        let mut tracker = Tracker::new(
-            &bounds,
-            config.floor,
-            config.ceiling,
-            config.prefer_flight_radar,
-        );
+        let mut tracker = Tracker::new(&bounds, config.floor, config.ceiling);
         // Start loops to listen for data
         if config.use_flightaware {
             tracker.run_faware();

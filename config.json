@@ -1,9 +1,9 @@
 {
-  "airport": "KLAX",
-  "range": 50,
+  "airport": "KBOS",
+  "range": 30,
   "delay": 6,
   "floor": 0,
   "ceiling": 99999,
-  "use_flightaware": false,
+  "use_flightaware": true,
   "prefer_flight_radar": true
 }
