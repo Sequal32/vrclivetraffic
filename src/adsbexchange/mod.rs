@@ -6,10 +6,8 @@ use log::warn;
 use crate::error::Error;
 use crate::util::{AircraftData, AircraftMap, AircraftProvider, Bounds};
 use attohttpc::{body::Empty, PreparedRequest, Session};
-use std::{
-    collections::{HashMap, HashSet},
-    sync::atomic::{AtomicU16, AtomicUsize, Ordering::SeqCst},
-};
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 
 const GLOBE_INDEX_GRID: f32 = 3.0;
 const ENDPOINT: &str = "https://globe.adsbexchange.com/data";

@@ -8,6 +8,7 @@ mod noaa;
 mod providers;
 mod request;
 mod tracker;
+mod updater;
 mod util;
 
 use airports::Airports;
@@ -16,7 +17,7 @@ use fsdparser::{ClientQueryPayload, PacketTypes, Parser};
 use log::{info, LevelFilter};
 use retain_mut::RetainMut;
 use serde::{Deserialize, Serialize};
-use simplelog::{Config, TermLogger, TerminalMode};
+use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use std::collections::{hash_map::Entry, HashMap};
 use std::fs::File;
 use std::io::{Read, Write};
@@ -26,6 +27,7 @@ use std::thread::sleep;
 use std::time::Instant;
 use std::{fmt::Display, time::Duration};
 use tracker::{TrackData, Tracker};
+use updater::Updater;
 use util::AircraftData;
 
 const CONFIG_FILENAME: &str = "config.json";
@@ -204,7 +206,22 @@ fn write_str(streams: &mut Vec<StreamData>, string: &str) {
 
 fn main() {
     // Setup logging
-    TermLogger::init(LevelFilter::Info, Config::default(), TerminalMode::Stdout).ok();
+    TermLogger::init(
+        LevelFilter::Info,
+        Config::default(),
+        TerminalMode::Stdout,
+        ColorChoice::Auto,
+    )
+    .ok();
+    // Check for updates
+    if let Ok(new_version) = Updater::get_latest_version() {
+        if new_version != Updater::get_version() {
+            info!(
+                "New version {} available! Head over to to the Github page to download!",
+                new_version
+            );
+        }
+    };
     // Bind TCP server
     let listener = match TcpListener::bind("127.0.0.1:6809") {
         Ok(l) => l,
