@@ -11,7 +11,7 @@ use crate::util::AircraftMap;
 use crate::util::{is_valid_callsign, Bounds};
 use crate::{adsbexchange::AdsbExchange, util::AircraftData};
 
-const POLL_RATE: u64 = 6;
+const POLL_RATE: u64 = 4;
 
 pub struct Tracker {
     providers: Providers,
@@ -123,17 +123,9 @@ impl Tracker {
     }
 
     // Removes aircraft that have been lost on radar
-    fn remove_untracked(&mut self, updated_keys: &HashSet<String>) {
-        let callsign_map = &mut self.callsign_map;
-
-        self.tracking.retain(|key, data| {
-            if !updated_keys.contains(key) {
-                callsign_map.remove(&data.ac_data.callsign);
-                false
-            } else {
-                true
-            }
-        })
+    fn remove_expired(&mut self) {
+        self.tracking
+            .retain(|_, data| data.at_last_position_update.elapsed().as_secs() < 20)
     }
 
     fn get_next_aircraft_update(&mut self) -> Option<AircraftMap> {
@@ -203,7 +195,7 @@ impl Tracker {
             processed_ids.insert(id);
         }
 
-        self.remove_untracked(&processed_ids);
+        self.remove_expired();
     }
 
     // Step

@@ -1,7 +1,7 @@
 use crate::util::{convert_miles_to_lat, convert_miles_to_lon, LatLon, Vector2D};
 use std::time::Instant;
 
-const INTERPOLATE_OFFSET: f32 = 0.1;
+const INTERPOLATE_OFFSET: f32 = 0.0;
 
 pub struct InterpolatePosition {
     pos: LatLon,

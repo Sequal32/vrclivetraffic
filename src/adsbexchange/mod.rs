@@ -6,7 +6,10 @@ use log::warn;
 use crate::error::Error;
 use crate::util::{AircraftData, AircraftMap, AircraftProvider, Bounds};
 use attohttpc::{body::Empty, PreparedRequest, Session};
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::atomic::{AtomicU16, AtomicUsize, Ordering::SeqCst},
+};
 
 const GLOBE_INDEX_GRID: f32 = 3.0;
 const ENDPOINT: &str = "https://globe.adsbexchange.com/data";
@@ -26,6 +29,7 @@ fn get_global_index(lat: f32, lon: f32) -> u16 {
 pub struct AdsbExchange {
     global_indexes: HashSet<u16>,
     session: Session,
+    last_fetched_index: AtomicUsize,
 }
 
 impl AdsbExchange {
@@ -85,6 +89,7 @@ impl AdsbExchange {
         let mut adsb = Self {
             global_indexes,
             session,
+            last_fetched_index: AtomicUsize::new(0),
         };
 
         adsb.fetch_cookie().ok();
@@ -134,12 +139,15 @@ impl AircraftProvider for AdsbExchange {
     fn get_aircraft(&self) -> Result<AircraftMap, Error> {
         let mut return_data = HashMap::new();
 
-        for index in self.global_indexes.iter() {
+        let last_fetched = self.last_fetched_index.load(SeqCst);
+        let mut fetched = 0;
+
+        for index in self.global_indexes.iter().skip(last_fetched).take(3) {
             let response = match self.get_request(index).send()?.error_for_status() {
                 Ok(r) => r,
                 Err(e) => {
                     warn!("Error fetching index {} from ADSBExchange: {}", index, e);
-                    continue;
+                    break;
                 }
             };
 
@@ -151,7 +159,12 @@ impl AircraftProvider for AdsbExchange {
                 let ident = aircraft.hex.clone();
                 return_data.insert(ident, aircraft.into());
             }
+
+            fetched += 1;
         }
+
+        self.last_fetched_index
+            .store((last_fetched + fetched) % self.global_indexes.len(), SeqCst);
 
         Ok(return_data)
     }
