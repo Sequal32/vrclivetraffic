@@ -5,20 +5,10 @@ use std::collections::HashMap;
 
 #[derive(Deserialize, Debug)]
 pub struct AirportData {
-    pub id: u32,
-    pub name: String,
-    pub city: String,
-    pub country: String,
-    pub iata: String,
-    pub icao: String,
-    pub lat: f32,
-    pub lon: f32,
-    pub elevation: i32,
-    pub utc: f32,
-    pub timezone: String,
-    filler: String,
-    filler2: String,
-    pub database: String,
+    pub iata_code: String,
+    pub latitude_deg: f32,
+    pub longitude_deg: f32,
+    pub ident: String,
 }
 
 pub struct Airports {
@@ -34,8 +24,12 @@ impl Airports {
 
         for record in reader.deserialize() {
             let record: AirportData = record?;
-            iata_icao_map.insert(record.iata.clone(), record.icao.clone());
-            db.insert(record.icao.clone(), record);
+            // No IATA code
+            if record.iata_code != "" {
+                iata_icao_map.insert(record.iata_code.clone(), record.ident.clone());
+            }
+
+            db.insert(record.ident.clone(), record);
         }
 
         Ok(Self { db, iata_icao_map })
@@ -44,8 +38,8 @@ impl Airports {
     pub fn get_lat_lon(&self, icao: &String) -> Option<LatLon> {
         let data = self.db.get(icao)?;
         Some(LatLon {
-            lat: data.lat,
-            lon: data.lon,
+            lat: data.latitude_deg,
+            lon: data.longitude_deg,
         })
     }
 
