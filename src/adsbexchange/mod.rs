@@ -188,7 +188,6 @@ impl Into<AircraftData> for ADSBExData {
             hex: self.hex,
             origin: String::new(),
             destination: String::new(),
-            provider: "ADSBExchange",
         }
     }
 }

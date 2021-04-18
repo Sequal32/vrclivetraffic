@@ -70,7 +70,6 @@ pub struct AircraftData {
     pub hex: String,
     pub origin: String,
     pub destination: String,
-    pub provider: &'static str,
 }
 
 impl AircraftData {
@@ -109,7 +108,6 @@ impl AircraftData {
             hex: self.hex,
             origin: replace_if!(self.origin != "" && !update_space, origin),
             destination: replace_if!(self.destination != "" && !update_space, destination),
-            provider: "Combined",
         }
     }
 }

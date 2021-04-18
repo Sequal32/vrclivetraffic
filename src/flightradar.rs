@@ -90,7 +90,6 @@ impl Into<AircraftData> for FRData {
             hex: self.mode_s_code,
             origin: self.origin,
             destination: self.destination,
-            provider: "FlightRadar24",
         }
     }
 }

@@ -58,10 +58,10 @@ fn build_aircraft_string(data: &mut TrackData, should_interpolate: bool) -> Stri
 }
 
 fn get_remarks(ac_data: &AircraftData) -> String {
-    format!("Provider {}, Hex {}", ac_data.provider, ac_data.hex)
+    format!("Hex {}", ac_data.hex)
 }
 
-fn build_flightplan_string(fp: &FlightPlan, remarks: &str, ac_data: &AircraftData) -> String {
+fn build_flightplan_string(fp: &FlightPlan, ac_data: &AircraftData) -> String {
     let fp_remarks = format!(
         "{}{}{}{}",
         fp.departure_time
@@ -98,15 +98,11 @@ fn build_flightplan_string(fp: &FlightPlan, remarks: &str, ac_data: &AircraftDat
         altitude = fp.fp.altitude,
         destination = fp.destination.icao,
         route = fp.fp.route,
-        remarks = format!("{}, {}", remarks, fp_remarks)
+        remarks = format!("{}, {}", get_remarks(ac_data), fp_remarks)
     )
 }
 
-fn build_init_flightplan_string(
-    ac_data: &AircraftData,
-    remarks: &str,
-    airports: &Airports,
-) -> String {
+fn build_init_flightplan_string(ac_data: &AircraftData, airports: &Airports) -> String {
     format!(
         "$FP{callsign}::{flight_rules}:{equipment}:0:{origin}:0:0:0:{destination}:0:0:0:0::/v/ {remarks}:\r\n",
         flight_rules = if ac_data.is_airline() {"I"} else {"V"},
@@ -114,7 +110,7 @@ fn build_init_flightplan_string(
         equipment = ac_data.model,
         origin = airports.get_icao_from_iata(&ac_data.origin).unwrap_or(&ac_data.origin),
         destination = airports.get_icao_from_iata(&ac_data.destination).unwrap_or(&ac_data.destination),
-        remarks = remarks
+        remarks = get_remarks(ac_data)
     )
 }
 
@@ -153,7 +149,8 @@ fn build_plane_info_string(callsign: &str, to: &str, ac_data: &AircraftData) -> 
 struct TrackedData {
     did_set_fp: bool,
     did_init_set: bool,
-    last_remarks: String,
+    last_origin: String,
+    last_destination: String,
 }
 
 struct StreamData {
@@ -324,7 +321,7 @@ fn main() {
             tracker.step();
 
             let should_update_position =
-                timer.is_none() || timer.unwrap().elapsed().as_secs_f32() >= 3.0;
+                timer.is_none() || timer.unwrap().elapsed().as_secs_f32() >= 5.0;
 
             let ac_data = tracker.get_aircraft_data();
             let aircraft_count = ac_data.len();
@@ -346,29 +343,26 @@ fn main() {
 
                     // Give the aircraft an initial flight plan
                     let should_set_init = !tracked.did_init_set && !aircraft.fp.is_some();
-                    let new_remarks = get_remarks(&aircraft.ac_data);
-                    let metadata_was_updated = new_remarks != tracked.last_remarks;
+                    let metadata_was_updated = tracked.last_origin != aircraft.ac_data.origin
+                        || tracked.last_destination != aircraft.ac_data.destination;
 
                     if (should_set_init || metadata_was_updated) && aircraft.fp.is_none() {
                         write_str(
                             &mut streams,
-                            &build_init_flightplan_string(
-                                &aircraft.ac_data,
-                                &new_remarks,
-                                &airports,
-                            ),
+                            &build_init_flightplan_string(&aircraft.ac_data, &airports),
                         );
 
                         tracked.did_init_set = true;
+                        tracked.last_origin = aircraft.ac_data.origin.clone();
+                        tracked.last_destination = aircraft.ac_data.destination.clone();
                     }
 
                     // Give the aircraft a flight plan if available
-                    if (!tracked.did_set_fp || metadata_was_updated) && aircraft.fp.is_some() {
+                    if !tracked.did_set_fp && aircraft.fp.is_some() {
                         write_str(
                             &mut streams,
                             &build_flightplan_string(
                                 aircraft.fp.as_ref().unwrap(),
-                                &new_remarks,
                                 &aircraft.ac_data,
                             ),
                         );
@@ -386,8 +380,6 @@ fn main() {
 
                         tracked.did_set_fp = true;
                     }
-
-                    tracked.last_remarks = new_remarks;
                 }
             }
 
@@ -477,12 +469,7 @@ fn main() {
 
                                     stream
                                         .write(
-                                            build_flightplan_string(
-                                                fp,
-                                                &get_remarks(&data.ac_data),
-                                                &data.ac_data,
-                                            )
-                                            .as_bytes(),
+                                            build_flightplan_string(fp, &data.ac_data).as_bytes(),
                                         )
                                         .ok();
                                 }
