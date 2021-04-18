@@ -1,8 +1,10 @@
 [package]
 name = "livetraffic"
+description = "Observe real world traffic in your favorite radar client!"
 version = "1.4.0"
-authors = ["Sequal32 <connor0530@gmail.com>"]
+authors = ["Sequal32"]
 edition = "2018"
+repository = "https://github.com/sequal/vrclivetraffic"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
