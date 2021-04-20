@@ -342,43 +342,19 @@ fn main() {
                     );
 
                     // Give the aircraft an initial flight plan
-                    let should_set_init = !tracked.did_init_set && !aircraft.fp.is_some();
-                    let metadata_was_updated = tracked.last_origin != aircraft.ac_data.origin
-                        || tracked.last_destination != aircraft.ac_data.destination;
+                    let metadata_was_updated = (aircraft.ac_data.origin != ""
+                        && tracked.last_origin != aircraft.ac_data.origin)
+                        || (aircraft.ac_data.destination != ""
+                            && tracked.last_destination != aircraft.ac_data.destination);
 
-                    if (should_set_init || metadata_was_updated) && aircraft.fp.is_none() {
+                    if metadata_was_updated && aircraft.fp.is_none() {
                         write_str(
                             &mut streams,
                             &build_init_flightplan_string(&aircraft.ac_data, &airports),
                         );
 
-                        tracked.did_init_set = true;
                         tracked.last_origin = aircraft.ac_data.origin.clone();
                         tracked.last_destination = aircraft.ac_data.destination.clone();
-                    }
-
-                    // Give the aircraft a flight plan if available
-                    if !tracked.did_set_fp && aircraft.fp.is_some() {
-                        write_str(
-                            &mut streams,
-                            &build_flightplan_string(
-                                aircraft.fp.as_ref().unwrap(),
-                                &aircraft.ac_data,
-                            ),
-                        );
-                        // Not squawking anything... will have duplicates if we assign an empty code
-                        if aircraft.ac_data.squawk != "0000" {
-                            write_str(
-                                &mut streams,
-                                &build_beacon_code_string(
-                                    &current_atc_callsign,
-                                    &aircraft.ac_data.callsign,
-                                    &aircraft.ac_data.squawk,
-                                ),
-                            );
-                        }
-
-                        tracked.did_set_fp = true;
                     }
                 }
             }
@@ -462,16 +438,38 @@ fn main() {
                                         None => continue,
                                     };
 
-                                    let fp = match &data.fp {
-                                        Some(fp) => fp,
-                                        None => continue,
-                                    };
+                                    if let Some(fp) = &data.fp {
+                                        stream
+                                            .write(
+                                                build_flightplan_string(fp, &data.ac_data)
+                                                    .as_bytes(),
+                                            )
+                                            .ok();
+                                    } else {
+                                        stream
+                                            .write(
+                                                &build_init_flightplan_string(
+                                                    &data.ac_data,
+                                                    &airports,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .ok();
+                                    }
 
-                                    stream
-                                        .write(
-                                            build_flightplan_string(fp, &data.ac_data).as_bytes(),
-                                        )
-                                        .ok();
+                                    // Not squawking anything... will have duplicates if we assign an empty code
+                                    if data.ac_data.squawk != "0000" {
+                                        stream
+                                            .write(
+                                                build_beacon_code_string(
+                                                    &current_atc_callsign,
+                                                    &data.ac_data.callsign,
+                                                    &data.ac_data.squawk,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .ok();
+                                    }
                                 }
                                 ClientQueryPayload::IsValidATCQuery(target) => {
                                     // Recognize callsign as a valid controller
