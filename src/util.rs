@@ -6,7 +6,7 @@ use regex::Regex;
 use crate::error::Error;
 
 lazy_static! {
-    static ref AIRLINE_REGEX: Regex = Regex::new(r"[A-z]{3}\d+").unwrap();
+    static ref AIRLINE_REGEX: Regex = Regex::new(r"([A-z]{3})\d+").unwrap();
     static ref CALLSIGN_REGEX: Regex = Regex::new(r"[A-Z]{3}[A-Z0-9]{1,}").unwrap();
     static ref REGISTRATION_REGEX: Regex =
         Regex::new(r"[A-Z]-[A-Z]{4}|[A-Z]{2}-[A-Z]{3}|N[0-9]{1,5}[A-Z]{0,2}").unwrap();
@@ -56,6 +56,7 @@ pub struct Bounds {
     pub lon2: f32,
 }
 
+#[derive(Debug)]
 pub struct AircraftData {
     pub squawk: String,
     pub callsign: String,
@@ -78,7 +79,7 @@ impl AircraftData {
     }
 
     pub fn get_airline(&self) -> Option<&str> {
-        Some(AIRLINE_REGEX.captures(&self.callsign)?.get(0)?.as_str())
+        Some(AIRLINE_REGEX.captures(&self.callsign)?.get(1)?.as_str())
     }
 
     pub fn combine_with(self, rhs: Self) -> Self {
@@ -87,9 +88,9 @@ impl AircraftData {
         macro_rules! replace_if {
             ($condition: expr, $field: ident) => {
                 if $condition {
-                    self.$field
-                } else {
                     rhs.$field
+                } else {
+                    self.$field
                 }
             };
         }
@@ -98,16 +99,16 @@ impl AircraftData {
             squawk: self.squawk,
             callsign: replace_if!(is_valid_callsign(&self.callsign), callsign),
             is_on_ground: self.is_on_ground,
-            latitude: replace_if!(self.latitude != 0.0 && !update_space, latitude),
-            longitude: replace_if!(self.longitude != 0.0 && !update_space, longitude),
-            heading: replace_if!(!update_space, heading),
+            latitude: replace_if!(self.latitude == 0.0 && update_space, latitude),
+            longitude: replace_if!(self.longitude == 0.0 && update_space, longitude),
+            heading: replace_if!(update_space, heading),
             ground_speed: self.ground_speed,
             timestamp: self.timestamp,
-            altitude: replace_if!(self.altitude != 0 && !update_space, altitude),
+            altitude: replace_if!(self.altitude == 0 && update_space, altitude),
             model: replace_if!(self.model == "", model),
             hex: self.hex,
-            origin: replace_if!(self.origin != "" && !update_space, origin),
-            destination: replace_if!(self.destination != "" && !update_space, destination),
+            origin: replace_if!(self.origin == "", origin),
+            destination: replace_if!(self.destination == "", destination),
         }
     }
 }

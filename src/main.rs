@@ -147,8 +147,6 @@ fn build_plane_info_string(callsign: &str, to: &str, ac_data: &AircraftData) -> 
 
 #[derive(Default)]
 struct TrackedData {
-    did_set_fp: bool,
-    did_init_set: bool,
     last_origin: String,
     last_destination: String,
 }
