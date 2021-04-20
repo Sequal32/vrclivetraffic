@@ -4,6 +4,5 @@
   "delay": 6,
   "floor": 0,
   "ceiling": 99999,
-  "use_flightaware": true,
-  "prefer_flight_radar": true
+  "use_flightaware": true
 }
