@@ -117,8 +117,15 @@ impl Tracker {
 
     // Removes aircraft that have been lost on radar
     fn remove_expired(&mut self) {
-        self.tracking
-            .retain(|_, data| data.at_last_position_update.elapsed().as_secs() < 20)
+        let callsign_map = &mut self.callsign_map;
+
+        self.tracking.retain(|_, data| {
+            let retain = data.at_last_position_update.elapsed().as_secs() < 20;
+            if !retain {
+                callsign_map.remove(&data.ac_data.callsign);
+            }
+            return retain;
+        })
     }
 
     fn get_next_aircraft_update(&mut self) -> Option<AircraftMap> {
