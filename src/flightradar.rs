@@ -24,7 +24,7 @@ impl FlightRadar {
 }
 
 impl AircraftProvider for FlightRadar {
-    fn get_aircraft(&self) -> Result<AircraftMap, Error> {
+    fn get_aircraft(&mut self) -> Result<AircraftMap, Error> {
         let response = attohttpc::get(&self.base_url).send()?.error_for_status()?;
 
         let mut return_data = HashMap::new();

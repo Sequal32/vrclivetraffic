@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use crate::{
     error::Error,
@@ -11,7 +14,7 @@ type ResultAircraftData = Result<HashMap<String, AircraftData>, (String, Error)>
 pub struct Providers {
     pub running: bool,
     request: Request<ResultAircraftData, ()>,
-    providers: Arc<Vec<Box<dyn AircraftProvider + Send + Sync>>>,
+    providers: Arc<Mutex<Vec<Box<dyn AircraftProvider + Send + Sync>>>>,
 }
 
 impl Providers {
@@ -19,7 +22,7 @@ impl Providers {
         Self {
             running: false,
             request: Request::new(1),
-            providers: Arc::new(providers),
+            providers: Arc::new(Mutex::new(providers)),
         }
     }
 
@@ -29,7 +32,7 @@ impl Providers {
         self.request.run(move |_| {
             let mut aircraft_map = HashMap::new();
 
-            for provider in providers.iter() {
+            for provider in providers.lock().unwrap().iter_mut() {
                 let data = match provider.get_aircraft() {
                     Ok(m) => m,
                     Err(e) => return Err((provider.get_name().to_string(), e)),

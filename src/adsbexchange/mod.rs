@@ -2,15 +2,19 @@ mod bincraft;
 mod util;
 pub use bincraft::*;
 use log::warn;
+use rand::{distributions::Alphanumeric, Rng};
 
 use crate::error::Error;
 use crate::util::{AircraftData, AircraftMap, AircraftProvider, Bounds};
 use attohttpc::{body::Empty, PreparedRequest, Session};
+use cookie::Cookie;
 use std::collections::{HashMap, HashSet};
+use std::iter;
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+use std::time::SystemTime;
 
 const GLOBE_INDEX_GRID: f32 = 3.0;
-const ENDPOINT: &str = "https://globe.adsbexchange.com/data";
+const ENDPOINT: &str = "https://globe.adsbexchange.com";
 
 fn get_global_index(lat: f32, lon: f32) -> u16 {
     let lat = GLOBE_INDEX_GRID * ((lat + 90.0) / GLOBE_INDEX_GRID).floor() - 90.0;
@@ -76,11 +80,6 @@ impl AdsbExchange {
 
         // Setup HTTP session
         let mut session = attohttpc::Session::new();
-        session.header("Accept", "*/*");
-        session.header(
-            "User-Agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:84.0) Gecko/20100101 Firefox/84.0",
-        );
         session.header("Referer", "https://globe.adsbexchange.com");
         session.header("Host", "globe.adsbexchange.com");
 
@@ -91,41 +90,52 @@ impl AdsbExchange {
         };
 
         adsb.fetch_cookie().ok();
-        adsb.check_and_remove_bad_tiles().ok();
 
         adsb
-    }
-
-    fn check_and_remove_bad_tiles(&mut self) -> Result<(), Error> {
-        let mut bad_tiles = Vec::new();
-
-        for index in self.global_indexes.iter() {
-            let response = self.session.head(self.get_url_for_index(index)).send()?;
-
-            if response.status() != 200 {
-                bad_tiles.push(*index);
-            }
-        }
-
-        for bad_tile in bad_tiles {
-            self.global_indexes.remove(&bad_tile);
-        }
-
-        Ok(())
     }
 
     fn fetch_cookie(&mut self) -> Result<(), Error> {
         let response = self.session.head(ENDPOINT).send()?;
         // We expect to get a Set-Cookie from this which will allow us to make more requests
-        if let Some(cookie) = response.headers().get("Set-Cookie") {
-            self.session.header("Cookie", cookie);
-        }
+        let mut cookies: Vec<String> = response
+            .headers()
+            .get_all("Set-Cookie")
+            .into_iter()
+            .map(|x| {
+                let cookie = Cookie::parse(x.to_str().unwrap()).unwrap();
+                return format!("{}={}", cookie.name(), cookie.value());
+            })
+            .collect();
+
+        // generate random adsbx_sid
+        let time = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+            + 2 * 86400 * 1000;
+
+        let random_chars = iter::repeat(())
+            .map(|_| rand::thread_rng().sample(Alphanumeric))
+            .take(11)
+            .map(|x| x as char)
+            .collect::<String>();
+
+        let sid = format!("adsbx_sid={}_{}", time, random_chars);
+        cookies.push(sid);
+
+        self.session.header("Cookie", cookies.join("; "));
+
+        // Validate SID by sending request to globeRates.json
+        self.session
+            .get(format!("{}/globeRates.json", ENDPOINT))
+            .send()
+            .ok();
 
         Ok(())
     }
 
     fn get_url_for_index(&self, index: &u16) -> String {
-        format!("{}/globe_{}.binCraft", ENDPOINT, index)
+        format!("{}/data/globe_{}.binCraft", ENDPOINT, index)
     }
 
     fn get_request(&self, index: &u16) -> PreparedRequest<Empty> {
@@ -134,8 +144,13 @@ impl AdsbExchange {
 }
 
 impl AircraftProvider for AdsbExchange {
-    fn get_aircraft(&self) -> Result<AircraftMap, Error> {
+    fn get_aircraft(&mut self) -> Result<AircraftMap, Error> {
         let mut return_data = HashMap::new();
+
+        // No tiles to fetch
+        if self.global_indexes.len() == 0 {
+            return Ok(return_data);
+        }
 
         let last_fetched = self.last_fetched_index.load(SeqCst);
         let mut fetched = 0;

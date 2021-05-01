@@ -10,12 +10,14 @@ repository = "https://github.com/sequal/vrclivetraffic"
 
 [dependencies]
 attohttpc = { version = "0.17", features = ["json"] }
+cookie = "0.15"
 crossbeam-channel = "0.5"
 crossbeam-deque = "0.8"
 chrono = { version = "0.4", features = ["serde"] }
 csv = "1.1"
 lazy_static = "1.4"
 log = "0.4"
+rand = "0.8"
 radix_fmt = "1"
 retain_mut = "0.1"
 regex = "1"

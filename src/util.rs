@@ -114,7 +114,7 @@ impl AircraftData {
 }
 
 pub trait AircraftProvider {
-    fn get_aircraft(&self) -> Result<AircraftMap, Error>;
+    fn get_aircraft(&mut self) -> Result<AircraftMap, Error>;
     fn get_name(&self) -> &str;
 }
 

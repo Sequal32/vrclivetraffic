@@ -65,8 +65,8 @@ pub struct ADSBExData {
     pub baro_rate: Option<f64>,
     pub geom_rate: Option<f64>,
 
-    pub nav_altitude_mcp: Option<u16>,
-    pub nav_altitude_fms: Option<u16>,
+    pub nav_altitude_mcp: Option<u32>,
+    pub nav_altitude_fms: Option<u32>,
     pub nav_qnh: Option<f64>,
     pub nav_heading: Option<f64>,
 
@@ -197,12 +197,12 @@ impl ADSBExData {
                 None
             },
             nav_altitude_mcp: if ua8[76] & 64 != 0 {
-                Some(ua16[12] * 4)
+                Some(ua16[12] as u32 * 4)
             } else {
                 None
             },
             nav_altitude_fms: if ua8[76] & 128 != 0 {
-                Some(ua16[13] * 4)
+                Some(ua16[13] as u32 * 4)
             } else {
                 None
             },
