@@ -34,7 +34,9 @@ Boston Center
 7. Optional: Listen to [LiveATC](https://www.liveatc.net/)
 
 ## Notes
-Flightplans from FlightAware will only be pulled for airline flights with a callsign starting with three letters followed by numbers in order to limit requests.
+
+* Flightplans from FlightAware will only be pulled for airline flights with a callsign starting with three letters followed by numbers in order to limit requests.
+* Sometimes ADSBExchange data will go beyond the range you defined in the config file. In this case, departure/arrival data from FlightRadar24 will not be reflected in those aircraft.
 
 ## Configuration
 `config.json` is read by the program and can be configured as follows:
