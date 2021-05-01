@@ -1,13 +1,9 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
-use crate::{
-    error::Error,
-    request::Request,
-    util::{AircraftData, AircraftProvider},
-};
+use crate::error::Error;
+use crate::request::Request;
+use crate::util::{AircraftData, AircraftProvider};
 
 type ResultAircraftData = Result<HashMap<String, AircraftData>, (String, Error)>;
 

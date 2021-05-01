@@ -120,7 +120,7 @@ impl Tracker {
         let callsign_map = &mut self.callsign_map;
 
         self.tracking.retain(|_, data| {
-            let retain = data.at_last_position_update.elapsed().as_secs() < 20;
+            let retain = data.at_last_position_update.elapsed().as_secs() < 10;
             if !retain {
                 callsign_map.remove(&data.ac_data.callsign);
             }

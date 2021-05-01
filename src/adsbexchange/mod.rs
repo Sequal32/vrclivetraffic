@@ -8,6 +8,7 @@ use crate::error::Error;
 use crate::util::{AircraftData, AircraftMap, AircraftProvider, Bounds};
 use attohttpc::{body::Empty, PreparedRequest, Session};
 use cookie::Cookie;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::iter;
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
@@ -28,10 +29,16 @@ fn get_global_index(lat: f32, lon: f32) -> u16 {
     return (i * lat_mutliplier + j + 1000.0) as u16;
 }
 
+#[derive(Serialize, Deserialize)]
+struct GlobeRates {
+    simload: usize,
+}
+
 pub struct AdsbExchange {
     global_indexes: HashSet<u16>,
     session: Session,
     last_fetched_index: AtomicUsize,
+    requests_per_interval: usize,
 }
 
 impl AdsbExchange {
@@ -86,6 +93,7 @@ impl AdsbExchange {
         let mut adsb = Self {
             global_indexes,
             session,
+            requests_per_interval: 4,
             last_fetched_index: AtomicUsize::new(0),
         };
 
@@ -126,10 +134,14 @@ impl AdsbExchange {
         self.session.header("Cookie", cookies.join("; "));
 
         // Validate SID by sending request to globeRates.json
-        self.session
+        if let Ok(globe_rates) = self
+            .session
             .get(format!("{}/globeRates.json", ENDPOINT))
             .send()
-            .ok();
+            .and_then(|x| x.json::<GlobeRates>())
+        {
+            self.requests_per_interval = globe_rates.simload;
+        }
 
         Ok(())
     }
@@ -155,7 +167,12 @@ impl AircraftProvider for AdsbExchange {
         let last_fetched = self.last_fetched_index.load(SeqCst);
         let mut fetched = 0;
 
-        for index in self.global_indexes.iter().skip(last_fetched).take(3) {
+        for index in self
+            .global_indexes
+            .iter()
+            .skip(last_fetched)
+            .take(self.requests_per_interval)
+        {
             let response = match self.get_request(index).send()?.error_for_status() {
                 Ok(r) => r,
                 Err(e) => {
