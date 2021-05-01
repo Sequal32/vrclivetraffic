@@ -8,7 +8,7 @@ pub struct AirportData {
     pub iata_code: String,
     pub latitude_deg: f32,
     pub longitude_deg: f32,
-    pub ident: String,
+    pub gps_code: String,
 }
 
 pub struct Airports {
@@ -26,10 +26,10 @@ impl Airports {
             let record: AirportData = record?;
             // No IATA code
             if record.iata_code != "" {
-                iata_icao_map.insert(record.iata_code.clone(), record.ident.clone());
+                iata_icao_map.insert(record.iata_code.clone(), record.gps_code.clone());
             }
 
-            db.insert(record.ident.clone(), record);
+            db.insert(record.gps_code.clone(), record);
         }
 
         Ok(Self { db, iata_icao_map })
