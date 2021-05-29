@@ -213,7 +213,7 @@ impl Into<AircraftData> for ADSBExData {
             latitude: self.lat.map(|x| x as f32).unwrap_or_default(),
             longitude: self.lon.map(|x| x as f32).unwrap_or_default(),
             heading: self.track.map(|x| x as u32).unwrap_or_default(),
-            ground_speed: self.ias.map(|x| x as u32).unwrap_or_default(),
+            ground_speed: self.gs.map(|x| x as u32).unwrap_or_default(),
             timestamp: self.time as u64,
             altitude: self.alt_baro.map(|x| x as i32).unwrap_or_default(),
             model: self.aircraft_type,
